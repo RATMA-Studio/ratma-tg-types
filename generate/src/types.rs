@@ -8,7 +8,7 @@ use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use crate::naming::*;
 use crate::schema::{Field, Spec};
 use crate::util::*;
-use regex::{escape, Regex};
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -95,14 +95,12 @@ impl<'a> GenerateTypes<'a> {
                             .iter()
                             .flat_map(|v| v.iter())
                             .filter(|field| field.name == "status")
-                            .map(|v| {
-                                let d = escape(REGEX_STATUS.as_str());
+                            .filter_map(|v| {
                                 REGEX_STATUS
                                     .find(v.description.as_deref().unwrap_or(""))
                                     .map(|v| &v.as_str()[1..v.as_str().len() - 1])
-                                    .unwrap_or_else(|| panic!("regex {} failed", d))
+                                    .map(|v| (v, st.as_str()))
                             })
-                            .map(|v| (v, st.as_str()))
                     })
                     .collect::<HashMap<&str, &str>>();
                 let e = if !statuses.is_empty() {
