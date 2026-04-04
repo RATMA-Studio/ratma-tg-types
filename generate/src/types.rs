@@ -1340,17 +1340,27 @@ impl<'a> GenerateTypes<'a> {
                             } else {
                                 &t.name
                             };
-                            if regular_type == Some("String") {
-                                if !f.required {
-                                    quote! { tg_type: Some(#typename.to_owned()) }
-                                } else {
-                                    quote! {
-                                        tg_type: #typename.to_owned(),
+
+                            match regular_type {
+                                Some("String") => {
+                                    if !f.required {
+                                        quote! { tg_type: Some(#typename.to_owned()) }
+                                    } else {
+                                        quote! {
+                                            tg_type: #typename.to_owned(),
+                                        }
                                     }
                                 }
-                            } else {
-                                quote! {
-                                    tg_type,
+
+                                Some(v) if is_special_type(v) => {
+                                    quote! {
+                                        tg_type: Box::new(tg_type),
+                                    }
+                                }
+                                _ => {
+                                    quote! {
+                                        tg_type,
+                                    }
                                 }
                             }
                         },
@@ -1558,7 +1568,7 @@ impl<'a> GenerateTypes<'a> {
                     quote!()
                 } else if is_str_field(f) || is_inputfile(f)
                 ||  f.types.iter().any(|t| is_array(t) > 0)
-                || ! should_wrap(&f.types) || f.name == "type" {
+                || ! should_wrap(&f.types) || f.name == "type"  {
                     quote! { .clone() }
                 } else {
                     quote! { .clone().into() }
@@ -1570,9 +1580,15 @@ impl<'a> GenerateTypes<'a> {
                     quote!()
                 };
 
+                let deref = if is_special_type(&f.types[0]) && f.name == "type" {
+                    quote! {*}
+                } else {
+                    quote!{}
+                };
+
                 let map = if is_primative(&f.types) {
                     quote!()
-                } else if is_str_field(f) ||  f.types.iter().any(|t| is_array(t) > 0) || ! should_wrap(&f.types) {
+                } else if is_str_field(f) || f.types.iter().any(|t| is_array(t) > 0) || ! should_wrap(&f.types) {
                     quote! { .cloned() }
                 } else {
                   quote! { .map(|v| v #into )  }
@@ -1583,7 +1599,7 @@ impl<'a> GenerateTypes<'a> {
                         quote! {
                             #comment
                             fn #fieldname_rhai(&mut self) -> #unbox_nowrap  {
-                                self.#returnname #into
+                                #deref self.#returnname #into
                             }
                         }
                     } else {

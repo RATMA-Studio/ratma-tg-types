@@ -138,6 +138,10 @@ where
     }
 }
 
+pub(crate) fn is_special_type(val: &str) -> bool {
+    val == "BackgroundType" || val == "StoryAreaType" || val == "ReactionType"
+}
+
 /// Hacky workaround to break our dependency on multitype enums for now while serde_urlencoded
 /// fixes outstanding issues with untagged enums
 pub(crate) fn is_chatid(types: &[String]) -> bool {

@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use tggen::Generate;
 
 fn main() -> Result<()> {
-    println!("cargo:rerun-if-changed=generate/");
+    println!("cargo:rerun-if-changed=generate/src/");
     println!("cargo:rerun-if-changed=telegram-bot-api-spec/");
     let mtx = Mutex::new(());
     let guard = mtx.lock().unwrap();
