@@ -1334,9 +1334,10 @@ impl<'a> GenerateTypes<'a> {
                             let search = "must be ";
                             let description = f.description.as_deref().unwrap_or("");
                             let typename = if let Some(index) = description.find(search) {
-                                &description[index + search.len()..]
+                                let n = &description[index + search.len()..];
+                                format!("NoSkip{n}")
                             } else {
-                                &t.name
+                                t.name.to_owned()
                             };
 
                             match regular_type {

@@ -168,7 +168,7 @@ dependencies = [
 
 [[package]]
 name = "tggen"
-version = "0.0.73"
+version = "0.0.74"
 dependencies = [
  "anyhow",
  "convert_case",
