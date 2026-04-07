@@ -61,35 +61,11 @@ fn all_vertex_sets<'a>(
     all_vertex_sets(sets, setindex + 1, size, dataindex, data, out);
 }
 
-fn iter_subtypes<'a>(
-    spec: &'a Spec,
-    parent: &'a Type,
-    t: &'a Type,
-    visited: &mut BTreeSet<(&'a Type, &'a Type)>,
-) {
-    if let Some(st) = t.subtypes.as_deref() {
-        for st in st {
-            let st = spec.get_type(st).unwrap();
-
-            // if visited.contains(&(parent, st)) {
-            //     continue;
-            // }
-
-            visited.insert((parent, st));
-            iter_subtypes(spec, parent, st, visited);
-        }
-    }
-}
-
 /// Convert a spec's types into an iterator over edges in the type digraph
 fn edges_iter(spec: &Spec) -> impl Iterator<Item = (&'_ Type, &'_ Type)> {
     spec.iter_types()
         .map(move |t| {
-            let mut visited = BTreeSet::new();
-            iter_subtypes(spec, t, t, &mut visited);
-
-            let fields = t
-                .fields
+            t.fields
                 .as_deref()
                 .unwrap_or(&[])
                 .into_iter()
@@ -99,8 +75,7 @@ fn edges_iter(spec: &Spec) -> impl Iterator<Item = (&'_ Type, &'_ Type)> {
                         .iter()
                         .filter_map(|t2| spec.get_type(t2))
                         .map(move |t2| (t, t2))
-                });
-            fields.chain(visited)
+                })
         })
         .flatten()
 }
