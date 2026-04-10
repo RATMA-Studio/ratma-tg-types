@@ -9,7 +9,7 @@ use crate::naming::*;
 use crate::schema::{Field, Spec};
 use crate::util::*;
 use regex::Regex;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 lazy_static! {
@@ -102,13 +102,22 @@ impl<'a> GenerateTypes<'a> {
                                     .map(|v| (v, st.as_str()))
                             })
                     })
-                    .collect::<HashMap<&str, &str>>();
+                    .collect::<BTreeMap<&str, &str>>();
                 let e = if !statuses.is_empty() {
                     self.generate_enum_internally_tagged(statuses, &v.name, "status")
                         .unwrap()
                 } else {
-                    self.generate_enum_str(subtypes.as_slice(), &v.name)
-                        .unwrap()
+                    let skip = self
+                        .generate_enum_str(subtypes.as_slice(), &v.name, true)
+                        .unwrap();
+                    let noskip = self
+                        .generate_enum_str(subtypes.as_slice(), &v.name, false)
+                        .unwrap();
+
+                    quote! {
+                        #skip
+                        #noskip
+                    }
                 };
                 let name = format_ident!("{}", v.name);
                 let methods = self.generate_enum_methods(v);
@@ -251,6 +260,7 @@ impl<'a> GenerateTypes<'a> {
             let methods = self
                 .get_common_methods_recursive_ext(t)
                 .iter()
+                .filter(|p| p.name != "type")
                 .filter_map(|field| {
                     let comment = field.description.comment();
                     let name = get_field_name(field);
@@ -528,7 +538,7 @@ impl<'a> GenerateTypes<'a> {
         } else {
             let res = if !is_inputfile_types(types) {
                 if let Some(name) = self.get_multitype_name_return(types) {
-                    let t = self.generate_enum_str(types, &name)?;
+                    let t = self.generate_enum_str(types, &name, true)?;
                     if !is_json_types(types) {
                         let typeiter = types.iter().map(get_type_name_str);
                         let types = generate_fmt_display_enum(&name, typeiter);
@@ -560,7 +570,7 @@ impl<'a> GenerateTypes<'a> {
                 for field in fields {
                     if field.types.len() > 1 && !is_inputfile(field) {
                         if let Some(name) = self.get_multitype_name(field) {
-                            let t = self.generate_enum_str(&field.types, &name)?;
+                            let t = self.generate_enum_str(&field.types, &name, true)?;
                             tokens.extend(t);
 
                             if !is_json(field) {
@@ -579,7 +589,7 @@ impl<'a> GenerateTypes<'a> {
                 for field in fields {
                     if field.types.len() > 1 && !is_inputfile(field) {
                         if let Some(name) = self.get_multitype_name(field) {
-                            let t = self.generate_enum_str(&field.types, &name)?;
+                            let t = self.generate_enum_str(&field.types, &name, true)?;
                             tokens.extend(t);
 
                             if !is_json(field) {
@@ -626,6 +636,12 @@ impl<'a> GenerateTypes<'a> {
                     quote! { Some(#fieldinst) }
                 };
 
+                let skip = if f.name == "type" && is_special_type(&f.types[0]) {
+                    quote! { self. #fieldname = Box::new(#fieldinst .noskip()); }
+                } else {
+                    quote! { self. #fieldname = #fieldinst; }
+                };
+
                 let fieldtype = self
                     .choose_type
                     .choose_type(&f.types, Some(t), &f.name, false, true)
@@ -634,7 +650,7 @@ impl<'a> GenerateTypes<'a> {
                 quote! {
                     #comment
                     pub fn #name (mut self, #fieldname: #fieldtype) -> Self {
-                        self. #fieldname = #fieldinst;
+                        #skip
                         self
                     }
                 }
@@ -723,7 +739,7 @@ impl<'a> GenerateTypes<'a> {
     /// Generate an enum with custom types
     fn generate_enum_internally_tagged(
         &self,
-        types: HashMap<&str, &str>,
+        types: BTreeMap<&str, &str>,
         name: &str,
         tag: &str,
     ) -> Result<TokenStream> {
@@ -788,12 +804,20 @@ impl<'a> GenerateTypes<'a> {
     }
 
     /// Generate an enum with custom types
-    fn generate_enum_str<N, I>(&self, types: &[I], name: &N) -> Result<TokenStream>
+    fn generate_enum_str<N, I>(&self, types: &[I], name: &N, skip: bool) -> Result<TokenStream>
     where
         N: AsRef<str>,
         I: AsRef<str>,
     {
-        let name = format_ident!("{}", name.as_ref());
+        let subtypes = self.spec.get_type(name.as_ref());
+        let noskip_name = format_ident!("NoSkip{}", name.as_ref());
+
+        let name = if skip {
+            format_ident!("{}", name.as_ref())
+        } else {
+            format_ident!("NoSkip{}", name.as_ref())
+        };
+
         let e = if !types.is_empty() {
             let names_iter = types
                 .iter()
@@ -809,13 +833,57 @@ impl<'a> GenerateTypes<'a> {
                 .iter()
                 .map(|v| type_without_array(v))
                 .map(|v| type_mapper(&v).to_owned())
-                .map(|v| format_ident!("{}", v));
+                .map(|v| {
+                    if skip {
+                        format_ident!("{v}")
+                    } else {
+                        format_ident!("NoSkip{v}")
+                    }
+                });
             let first_type = types
                 .iter()
                 .map(|v| type_without_array(v))
                 .map(|v| type_mapper(&v).to_owned())
-                .map(|v| format_ident!("{}", v))
+                .map(|v| {
+                    if skip {
+                        format_ident!("{v}")
+                    } else {
+                        format_ident!("NoSkip{v}")
+                    }
+                })
                 .next();
+
+            let noskip = if let Some(subtypes) = subtypes {
+                let vec = vec![];
+                let match_arms = subtypes
+                    .subtypes
+                    .as_ref()
+                    .unwrap_or(&vec)
+                    .iter()
+                    .map(get_type_name_str)
+                    .map(|t| format_ident!("{}", t))
+                    .map(|t| {
+                        quote! {
+                            Self::#t(v) => #noskip_name :: #t( v.noskip() )
+                        }
+                    });
+
+                let mat = quote! {
+                    match self {
+                        #( #match_arms ),*
+                    }
+                };
+
+                quote! {
+                    impl #name {
+                        pub fn noskip(self) -> #noskip_name {
+                            #mat
+                        }
+                    }
+                }
+            } else {
+                quote! {}
+            };
 
             let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
                 quote! {
@@ -840,6 +908,7 @@ impl<'a> GenerateTypes<'a> {
                     ),*
                 }
                 #default
+                #noskip
             }
         } else {
             quote! {
@@ -908,7 +977,7 @@ impl<'a> GenerateTypes<'a> {
         if let Some(t) = self.spec.get_type(t) {
             if should_generate_customtype(t) {
                 let name = format_ident!("{}", t.name);
-                let getters = t.pretty_fields().map(|f| {
+                let getters = t.pretty_fields().filter(|f| f.name != "type").map(|f| {
                     //  let comment = f.description.comment();
                     let name = get_field_name(f);
                     // let fieldname = format_ident!("get_{}", name);
@@ -1353,7 +1422,7 @@ impl<'a> GenerateTypes<'a> {
 
                                 Some(v) if is_special_type(v) => {
                                     quote! {
-                                        tg_type: Box::new(tg_type),
+                                        tg_type: Box::new(tg_type.noskip()),
                                     }
                                 }
                                 _ => {
@@ -1395,7 +1464,7 @@ impl<'a> GenerateTypes<'a> {
             let param = match regular_type {
                 Some("String") => quote!(),
                 Some(v) => {
-                    let v = format_ident!("{}", v);
+                    let v = format_ident!("NoSkip{}", v);
                     let c = if generics.is_empty() {
                         quote!()
                     } else {
@@ -1432,6 +1501,7 @@ impl<'a> GenerateTypes<'a> {
     fn generate_impl_functions(&self, t: &Type, public: bool, rhai: bool) -> TokenStream {
         let methods = t
             .pretty_fields()
+            .filter(|p| p.name != "type")
             .map(|f| {
                 let comment = f.description.comment();
                 let name = get_field_name(f);
@@ -1448,7 +1518,13 @@ impl<'a> GenerateTypes<'a> {
                     .unwrap();
                 let is_str = is_str_field(f);
 
+
                 let assign = if boxed {
+                    let returnname = if f.name == "type" && is_special_type(&f.types[0]) {
+                        quote! { #returnname .noskip() }
+                    } else {
+                        quote!{ #returnname  }
+                    };
                     quote! {
                         Box::new(#returnname)
                     }
@@ -1918,6 +1994,7 @@ impl<'a> GenerateTypes<'a> {
 
         let methods = t
             .pretty_fields()
+            .filter(|p| p.name != "type")
             .map(|f| {
                 let comment = f.description.comment();
                 let name = get_field_name(f);
@@ -2090,6 +2167,7 @@ impl<'a> GenerateTypes<'a> {
                 quote! { pub #name }
             }
         });
+
         let fieldtypes = if t.name == "Update" {
             t.pretty_fields()
                 .filter_map(|v| {
@@ -2107,9 +2185,14 @@ impl<'a> GenerateTypes<'a> {
         } else {
             t.pretty_fields()
                 .filter_map(|v| {
-                    self.choose_type
-                        .choose_type(v.types.as_slice(), Some(t), &v.name, !v.required, false)
-                        .ok()
+                    if v.name == "type" && is_special_type(&v.types[0]) {
+                        let name = format_ident!("NoSkip{}", v.types[0]);
+                        Some(quote! {Box<#name>})
+                    } else {
+                        self.choose_type
+                            .choose_type(v.types.as_slice(), Some(t), &v.name, !v.required, false)
+                            .ok()
+                    }
                 })
                 .collect_vec()
         };
@@ -2125,6 +2208,18 @@ impl<'a> GenerateTypes<'a> {
             .comment()
         };
 
+        let noskip = if !serde_skip {
+            quote! {
+                impl #typename {
+                    pub fn noskip(self) -> #typename {
+                        self.into()
+                    }
+                }
+            }
+        } else {
+            quote! {}
+        };
+
         let res = quote! {
             #struct_comment
             #[derive(Serialize, Deserialize, Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -2133,6 +2228,8 @@ impl<'a> GenerateTypes<'a> {
                     #fieldnames: #fieldtypes
                 ),*
             }
+
+            #noskip
         };
         Ok(res)
     }
