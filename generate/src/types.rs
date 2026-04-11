@@ -113,10 +113,10 @@ impl<'a> GenerateTypes<'a> {
                     let noskip = self
                         .generate_enum_str(subtypes.as_slice(), &v.name, false)
                         .unwrap();
-
                     quote! {
                         #skip
                         #noskip
+
                     }
                 };
                 let name = format_ident!("{}", v.name);
@@ -260,7 +260,6 @@ impl<'a> GenerateTypes<'a> {
             let methods = self
                 .get_common_methods_recursive_ext(t)
                 .iter()
-                .filter(|p| p.name != "type")
                 .filter_map(|field| {
                     let comment = field.description.comment();
                     let name = get_field_name(field);
@@ -810,7 +809,8 @@ impl<'a> GenerateTypes<'a> {
         I: AsRef<str>,
     {
         let subtypes = self.spec.get_type(name.as_ref());
-        let noskip_name = format_ident!("NoSkip{}", name.as_ref());
+        let skip_name = format_ident!("{}", name.as_ref());
+        let no_skip_name = format_ident!("NoSkip{}", name.as_ref());
 
         let name = if skip {
             format_ident!("{}", name.as_ref())
@@ -855,29 +855,60 @@ impl<'a> GenerateTypes<'a> {
 
             let noskip = if let Some(subtypes) = subtypes {
                 let vec = vec![];
-                let match_arms = subtypes
+                let subtypes = subtypes
                     .subtypes
                     .as_ref()
                     .unwrap_or(&vec)
                     .iter()
                     .map(get_type_name_str)
                     .map(|t| format_ident!("{}", t))
-                    .map(|t| {
+                    .collect::<Vec<_>>();
+                if skip {
+                    let match_arms = subtypes.iter().map(|t| {
                         quote! {
-                            Self::#t(v) => #noskip_name :: #t( v.noskip() )
+                            Self::#t(v) => #no_skip_name :: #t( v.noskip() )
                         }
                     });
 
-                let mat = quote! {
-                    match self {
-                        #( #match_arms ),*
-                    }
-                };
+                    let mat = quote! {
+                        match self {
+                            #( #match_arms ),*
+                        }
+                    };
 
-                quote! {
-                    impl #name {
-                        pub fn noskip(self) -> #noskip_name {
-                            #mat
+                    quote! {
+                        impl #skip_name {
+                            pub fn noskip(self) -> #no_skip_name {
+                                #mat
+                            }
+
+                            pub fn skip(self) -> #skip_name {
+                                self
+                            }
+                        }
+                    }
+                } else {
+                    let match_arms = subtypes.iter().map(|t| {
+                        quote! {
+                            Self::#t(v) => #skip_name :: #t( v.skip() )
+                        }
+                    });
+
+                    let mat = quote! {
+                        match self {
+                            #( #match_arms ),*
+                        }
+                    };
+
+                    quote! {
+                        impl #no_skip_name {
+                            pub fn noskip(self) -> #no_skip_name {
+                                self
+                            }
+
+                            pub fn skip(self) -> #skip_name {
+                                #mat
+                            }
                         }
                     }
                 }
@@ -977,7 +1008,7 @@ impl<'a> GenerateTypes<'a> {
         if let Some(t) = self.spec.get_type(t) {
             if should_generate_customtype(t) {
                 let name = format_ident!("{}", t.name);
-                let getters = t.pretty_fields().filter(|f| f.name != "type").map(|f| {
+                let getters = t.pretty_fields().map(|f| {
                     //  let comment = f.description.comment();
                     let name = get_field_name(f);
                     // let fieldname = format_ident!("get_{}", name);
@@ -1501,7 +1532,6 @@ impl<'a> GenerateTypes<'a> {
     fn generate_impl_functions(&self, t: &Type, public: bool, rhai: bool) -> TokenStream {
         let methods = t
             .pretty_fields()
-            .filter(|p| p.name != "type")
             .map(|f| {
                 let comment = f.description.comment();
                 let name = get_field_name(f);
@@ -1566,6 +1596,13 @@ impl<'a> GenerateTypes<'a> {
                     }
                 };
 
+                let skip = if f.name == "type" && is_special_type(&f.types[0]) {
+                        quote! { .skip() }
+                } else {
+                    quote! {}
+                };
+
+
                 let refaccess = if is_str && f.required {
                     quote! { self.#returnname.as_str() }
                 } else if primative {
@@ -1596,7 +1633,10 @@ impl<'a> GenerateTypes<'a> {
                 //     quote! { Cow<'a, #unbox> }
                 // };
 
-                let refret = if is_str {
+                let refret = if f.name == "type" && is_special_type(&f.types[0]) {
+                    let t = format_ident!("NoSkip{}", f.types[0]);
+                    quote! { &'a #t }
+                } else if is_str {
                     quote! { &'a str }
                 } else if primative {
                     unbox_nowrap.to_owned()
@@ -1655,11 +1695,11 @@ impl<'a> GenerateTypes<'a> {
                     quote!()
                 };
 
-                let deref = if is_special_type(&f.types[0]) && f.name == "type" {
-                    quote! {*}
-                } else {
-                    quote!{}
-                };
+                // let deref = if is_special_type(&f.types[0]) && f.name == "type" {
+                //     quote! {*}
+                // } else {
+                //     quote!{}
+                // };
 
                 let map = if is_primative(&f.types) {
                     quote!()
@@ -1674,7 +1714,7 @@ impl<'a> GenerateTypes<'a> {
                         quote! {
                             #comment
                             fn #fieldname_rhai(&mut self) -> #unbox_nowrap  {
-                                #deref self.#returnname #into
+                                self.#returnname #into #skip
                             }
                         }
                     } else {
@@ -1994,7 +2034,6 @@ impl<'a> GenerateTypes<'a> {
 
         let methods = t
             .pretty_fields()
-            .filter(|p| p.name != "type")
             .map(|f| {
                 let comment = f.description.comment();
                 let name = get_field_name(f);
@@ -2024,7 +2063,10 @@ impl<'a> GenerateTypes<'a> {
                 //     quote! { Cow<'a, #unbox> }
                 // };
 
-                let refret = if is_str {
+                let refret = if f.name == "type" && is_special_type(&f.types[0]) {
+                    let t = format_ident!("NoSkip{}", f.types[0]);
+                    quote! { &'a #t }
+                } else if is_str {
                     quote! { &'a str }
                 } else if primative {
                     unbox_nowrap.clone()
