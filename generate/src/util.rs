@@ -179,6 +179,7 @@ impl<'a> ChooseType<'a> {
         name: &T,
         optional: bool,
         no_wrap: bool,
+        noskip: bool,
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -193,6 +194,7 @@ impl<'a> ChooseType<'a> {
             false,
             no_wrap,
             false,
+            noskip,
         )
     }
 
@@ -216,6 +218,7 @@ impl<'a> ChooseType<'a> {
             true,
             owned,
             true,
+            false,
             false,
         )
     }
@@ -241,6 +244,7 @@ impl<'a> ChooseType<'a> {
             owned,
             false,
             true,
+            false,
         )
     }
 
@@ -264,6 +268,7 @@ impl<'a> ChooseType<'a> {
             true,
             owned,
             true,
+            false,
             false,
         )
     }
@@ -290,6 +295,7 @@ impl<'a> ChooseType<'a> {
             false,
             true,
             false,
+            false,
         )
     }
 
@@ -308,6 +314,7 @@ impl<'a> ChooseType<'a> {
         owned: bool,
         no_wrap: bool,
         mut force_box: bool,
+        noskip: bool,
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -340,6 +347,8 @@ impl<'a> ChooseType<'a> {
             let res = type_mapper(&mytype);
             let res = if res == "f64" {
                 quote! { ::ordered_float::OrderedFloat<f64> }
+            } else if noskip && is_json_types_array(types) {
+                format_ident!("NoSkip{}", res).into_token_stream()
             } else {
                 format_ident!("{}", res).into_token_stream()
             };
@@ -369,6 +378,8 @@ impl<'a> ChooseType<'a> {
         } else {
             let res = if mytype == "f64" {
                 quote! { ::ordered_float::OrderedFloat<f64> }
+            } else if noskip && is_json_types_array(types) {
+                format_ident!("NoSkip{}", mytype).into_token_stream()
             } else {
                 format_ident!("{}", mytype).into_token_stream()
             };
@@ -451,6 +462,18 @@ pub(crate) fn is_json_types_internal(types: &[&str]) -> bool {
     for t in types {
         for compare in ["Integer", "Boolean", "Float", "String"] {
             if t.ends_with(compare) && !t.starts_with("Array of") {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+pub(crate) fn is_json_types_array(types: &[String]) -> bool {
+    let types = types.iter().map(|v| v.as_str()).collect::<Vec<&str>>();
+    for t in types {
+        for compare in ["Integer", "Boolean", "Float", "String"] {
+            if t.ends_with(compare) {
                 return false;
             }
         }

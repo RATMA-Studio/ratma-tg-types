@@ -9,7 +9,7 @@ use crate::naming::*;
 use crate::schema::{Field, Spec};
 use crate::util::*;
 use regex::Regex;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
 lazy_static! {
@@ -56,7 +56,8 @@ impl<'a> GenerateTypes<'a> {
 
     fn preamble(&self) -> Result<TokenStream> {
         let structs = self.spec.types.values().map(|v| {
-            if v.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0 {
+            let field_len = v.fields.as_ref().map(|f| f.len()).unwrap_or(0);
+            if field_len > 0 {
                 let s = self.generate_struct(&v.name, &v.name, true).unwrap();
                 let skip = self
                     .generate_struct(&v.name, &format!("NoSkip{}", v.name), false)
@@ -104,8 +105,17 @@ impl<'a> GenerateTypes<'a> {
                     })
                     .collect::<BTreeMap<&str, &str>>();
                 let e = if !statuses.is_empty() {
-                    self.generate_enum_internally_tagged(statuses, &v.name, "status")
-                        .unwrap()
+                    let skip = self
+                        .generate_enum_internally_tagged(statuses.clone(), &v.name, "status", false)
+                        .unwrap();
+                    let noskip = self
+                        .generate_enum_internally_tagged(statuses, &v.name, "status", true)
+                        .unwrap();
+
+                    quote! {
+                        #skip
+                        #noskip
+                    }
                 } else {
                     let skip = self
                         .generate_enum_str(subtypes.as_slice(), &v.name, true)
@@ -116,13 +126,20 @@ impl<'a> GenerateTypes<'a> {
                     quote! {
                         #skip
                         #noskip
-
                     }
                 };
                 let name = format_ident!("{}", v.name);
                 let methods = self.generate_enum_methods(v);
+
+                let altfrom = if field_len == 0 && v.subtypes.is_none() {
+                    self.generate_from_skip(v)
+                } else {
+                    quote! {}
+                };
+
                 quote! {
                     #e
+                    #altfrom
                     impl #name {
                         #methods
                     }
@@ -135,11 +152,12 @@ impl<'a> GenerateTypes<'a> {
             .types
             .values()
             .filter_map(|v| self.generate_trait(v).ok());
+        let mut complete = BTreeSet::new();
         let impls = self
             .spec
             .types
             .values()
-            .filter_map(|v| self.generate_impl(&v.name).ok());
+            .filter_map(|v| self.generate_impl(&v.name, &mut complete).ok());
         let typeenums = self.generate_multitype_enums()?;
         let extra = self.generate_method_multitypes()?;
         let uses = self.generate_use()?;
@@ -150,6 +168,149 @@ impl<'a> GenerateTypes<'a> {
         let res = quote! {
             #uses
             #chatid
+
+            trait IntoNoSkip {
+                type NoSkip;
+                fn into_noskip(self) -> Self::NoSkip;
+            }
+
+            impl <T> IntoNoSkip for Option<T> where T: IntoNoSkip {
+                type NoSkip = Option<T::NoSkip>;
+                fn into_noskip(self) -> Option<T::NoSkip> {
+                    self.map(|v| v.into_noskip())
+                }
+            }
+
+            impl <T> IntoNoSkip for Vec<T> where T: IntoNoSkip {
+                type NoSkip = Vec<T::NoSkip>;
+                fn into_noskip(self) -> Vec<T::NoSkip> {
+                    self.into_iter().map(|v| v.into_noskip()).collect()
+                }
+            }
+
+            impl IntoNoSkip for String {
+                type NoSkip = String;
+                fn into_noskip(self) -> Self::NoSkip {
+                    self
+                }
+            }
+
+            impl IntoNoSkip for i64 {
+                type NoSkip = i64;
+                fn into_noskip(self) -> Self::NoSkip {
+                    self
+                }
+            }
+
+
+            impl IntoNoSkip for bool {
+                type NoSkip = bool;
+                fn into_noskip(self) -> Self::NoSkip {
+                    self
+                }
+            }
+
+            impl IntoNoSkip for f64 {
+                type NoSkip = f64;
+                fn into_noskip(self) -> Self::NoSkip {
+                    self
+                }
+            }
+
+            impl IntoNoSkip for InputFile {
+                type NoSkip = InputFile;
+                fn into_noskip(self) -> Self::NoSkip {
+                    self
+                }
+            }
+
+            impl IntoNoSkip for ChatHandle {
+                type NoSkip = ChatHandle;
+                fn into_noskip(self) -> Self::NoSkip {
+                    self
+                }
+            }
+
+
+            impl IntoNoSkip for ::ordered_float::OrderedFloat<f64> {
+                type NoSkip = ::ordered_float::OrderedFloat<f64>;
+                fn into_noskip(self) -> Self::NoSkip {
+                    self
+                }
+            }
+
+
+
+            trait IntoSkip {
+                type Skip;
+                fn into_skip(self) -> Self::Skip;
+            }
+
+            impl <T> IntoSkip for Option<T> where T: IntoSkip {
+                type Skip = Option<T::Skip>;
+                fn into_skip(self) -> Option<T::Skip> {
+                    self.map(|v| v.into_skip())
+                }
+            }
+
+            impl <T> IntoSkip for Vec<T> where T: IntoSkip {
+                type Skip = Vec<T::Skip>;
+                fn into_skip(self) -> Vec<T::Skip> {
+                    self.into_iter().map(|v| v.into_skip()).collect()
+                }
+            }
+
+            impl IntoSkip for String {
+                type Skip = String;
+                fn into_skip(self) -> Self::Skip {
+                    self
+                }
+            }
+
+            impl IntoSkip for i64 {
+                type Skip = i64;
+                fn into_skip(self) -> Self::Skip {
+                    self
+                }
+            }
+
+
+            impl IntoSkip for bool {
+                type Skip = bool;
+                fn into_skip(self) -> Self::Skip {
+                    self
+                }
+            }
+
+            impl IntoSkip for f64 {
+                type Skip = f64;
+                fn into_skip(self) -> Self::Skip {
+                    self
+                }
+            }
+
+            impl IntoSkip for InputFile {
+                type Skip = InputFile;
+                fn into_skip(self) -> Self::Skip {
+                    self
+                }
+            }
+
+            impl IntoSkip for ChatHandle {
+                type Skip = ChatHandle;
+                fn into_skip(self) -> Self::Skip {
+                    self
+                }
+            }
+
+
+            impl IntoSkip for ::ordered_float::OrderedFloat<f64> {
+                type Skip = ::ordered_float::OrderedFloat<f64>;
+                fn into_skip(self) -> Self::Skip {
+                    self
+                }
+            }
+
             #( #traits )*
             #( #structs )*
             #( #impls )*
@@ -193,7 +354,7 @@ impl<'a> GenerateTypes<'a> {
                         .unwrap()
                 } else {
                     self.choose_type
-                        .choose_type(f.types.as_slice(), Some(t), &f.name, false, true)
+                        .choose_type(f.types.as_slice(), Some(t), &f.name, false, true, false)
                         .unwrap()
                 };
                 let name = format_ident!("{}", fieldname);
@@ -435,41 +596,193 @@ impl<'a> GenerateTypes<'a> {
     }
 
     fn generate_from_skip(&self, t: &Type) -> TokenStream {
+        if t.name == "Update" {
+            return quote! {};
+        }
         let skipname = format_ident!("NoSkip{}", t.name);
         let name = format_ident!("{}", t.name);
-        let fieldnames = t.pretty_fields().map(|f| {
-            let fieldname = get_field_name(f);
-            let fieldname = format_ident!("{}", fieldname);
-            quote! {
-                #fieldname: t.#fieldname
-            }
-        });
+        let fieldnames = t
+            .pretty_fields()
+            .map(|f| {
+                let fieldname = get_field_name(f);
+                let fieldname = format_ident!("{}", fieldname);
+                if f.name == "type" && is_special_type(&f.types[0]) {
+                    quote! {
+                        #fieldname: Box::new(self.#fieldname .into_noskip())
+                    }
+                } else {
+                    quote! {
+                        #fieldname: self.#fieldname .into_skip()
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
 
-        let into_fieldnames = t.pretty_fields().map(|f| {
-            let fieldname = get_field_name(f);
-            let fieldname = format_ident!("{}", fieldname);
-            quote! {
-                #fieldname: self.#fieldname
-            }
-        });
+        let into_fieldnames = t
+            .pretty_fields()
+            .map(|f| {
+                let fieldname = get_field_name(f);
+                let fieldname = format_ident!("{}", fieldname);
+
+                if f.name == "type" && is_special_type(&f.types[0]) {
+                    quote! {
+                        #fieldname: Box::new(self.#fieldname .into_noskip())
+                    }
+                } else {
+                    quote! {
+                        #fieldname: self.#fieldname .into_noskip()
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
 
         quote! {
+
            impl From<#skipname> for #name {
                fn from(t: #skipname) -> Self {
-                    Self {
-                        #( #fieldnames ),*
-                    }
+                   t.into_skip()
                }
            }
 
            #[allow(clippy::from_over_into)]
-            impl Into<#skipname> for #name {
-                fn into(self) -> #skipname {
-                    #skipname {
-                        #( #into_fieldnames ),*
-                    }
+           impl Into<#skipname> for #name {
+                 fn into(self) -> #skipname {
+                     #skipname {
+                         #( #into_fieldnames ),*
+                     }
+                 }
+             }
+
+             impl IntoNoSkip for #name {
+                 type NoSkip = #skipname;
+                 fn into_noskip(self) -> Self::NoSkip {
+                     #skipname {
+                         #( #into_fieldnames ),*
+                     }
+                 }
+             }
+
+
+             impl IntoNoSkip for #skipname {
+                 type NoSkip = #skipname;
+                 fn into_noskip(self) -> Self::NoSkip {
+                    self
+                 }
+             }
+
+              impl IntoNoSkip for BoxWrapper<Box<#name>> {
+                  type NoSkip = BoxWrapper<Box<#skipname>>;
+                  fn into_noskip(self) -> Self::NoSkip {
+                      BoxWrapper::new_box(self.consume().into_noskip())
+                  }
+              }
+
+
+              impl IntoNoSkip for BoxWrapper<Unbox<#name>> {
+                  type NoSkip = BoxWrapper<Unbox<#skipname>>;
+                  fn into_noskip(self) -> Self::NoSkip {
+                      BoxWrapper::new_unbox(self.consume().into_noskip())
+                  }
+              }
+
+
+
+              impl IntoNoSkip for BoxWrapper<Box<#skipname>> {
+                  type NoSkip = BoxWrapper<Box<#skipname>>;
+                  fn into_noskip(self) -> Self::NoSkip {
+                      self.into()
+                  }
+              }
+
+
+              impl IntoNoSkip for BoxWrapper<Unbox<#skipname>> {
+                  type NoSkip = BoxWrapper<Unbox<#skipname>>;
+                  fn into_noskip(self) -> Self::NoSkip {
+                      self.into()
+                  }
+              }
+
+
+
+              //new
+
+
+
+              impl IntoSkip for #skipname {
+                  type Skip = #name;
+                  fn into_skip(self) -> Self::Skip {
+                      #name {
+                          #( #fieldnames ),*
+                      }
+                  }
+              }
+
+
+              impl IntoSkip for #name {
+                  type Skip = #name;
+                  fn into_skip(self) -> Self::Skip {
+                     self
+                  }
+              }
+
+               impl IntoSkip for BoxWrapper<Box<#skipname>> {
+                   type Skip = BoxWrapper<Box<#name>>;
+                   fn into_skip(self) -> Self::Skip {
+                       BoxWrapper::new_box(self.consume().into_skip())
+                   }
+               }
+
+
+               impl IntoSkip for BoxWrapper<Unbox<#skipname>> {
+                   type Skip = BoxWrapper<Unbox<#name>>;
+                   fn into_skip(self) -> Self::Skip {
+                       BoxWrapper::new_unbox(self.consume().into_skip())
+                   }
+               }
+
+
+
+               impl IntoSkip for BoxWrapper<Box<#name>> {
+                   type Skip = BoxWrapper<Box<#name>>;
+                   fn into_skip(self) -> Self::Skip {
+                       self.into()
+                   }
+               }
+
+
+               impl IntoSkip for BoxWrapper<Unbox<#name>> {
+                   type Skip = BoxWrapper<Unbox<#name>>;
+                   fn into_skip(self) -> Self::Skip {
+                       self.into()
+                   }
+               }
+
+
+            #[allow(clippy::from_over_into)]
+             impl Into<BoxWrapper<Box<#skipname>>> for BoxWrapper<Box<#name>> {
+                 fn into(self) -> BoxWrapper<Box<#skipname>> {
+                     BoxWrapper::new_box(self.consume().into())
+                 }
+             }
+
+           impl From<BoxWrapper<Box<#skipname>>> for BoxWrapper<Box<#name>> {
+                 fn from(t: BoxWrapper<Box<#skipname>>) -> Self {
+                      BoxWrapper::new_box(t.consume().into())
+                 }
+           }
+
+           #[allow(clippy::from_over_into)]
+            impl Into<BoxWrapper<Unbox<#skipname>>> for BoxWrapper<Unbox<#name>> {
+                fn into(self) -> BoxWrapper<Unbox<#skipname>> {
+                    BoxWrapper::new_unbox(self.consume().into())
                 }
             }
+
+          impl From<BoxWrapper<Unbox<#skipname>>> for BoxWrapper<Unbox<#name>> {
+                fn from(t: BoxWrapper<Unbox<#skipname>>) -> Self {
+                     BoxWrapper::new_unbox(t.consume().into())
+                }
+          }
 
             impl #skipname {
                 pub fn skip(self) -> #name {
@@ -643,7 +956,7 @@ impl<'a> GenerateTypes<'a> {
 
                 let fieldtype = self
                     .choose_type
-                    .choose_type(&f.types, Some(t), &f.name, false, true)
+                    .choose_type(&f.types, Some(t), &f.name, false, true, false)
                     .unwrap();
                 let comment = f.description.comment();
                 quote! {
@@ -741,7 +1054,17 @@ impl<'a> GenerateTypes<'a> {
         types: BTreeMap<&str, &str>,
         name: &str,
         tag: &str,
+        noskip: bool,
     ) -> Result<TokenStream> {
+        let subtypes = self.spec.get_type(name);
+        let skip_name = format_ident!("{}", name);
+        let no_skip_name = format_ident!("NoSkip{}", name);
+
+        let name = if noskip {
+            format_ident!("NoSkip{}", name)
+        } else {
+            format_ident!("{}", name)
+        };
         let e = if !types.is_empty() {
             let names_iter = types
                 .values()
@@ -757,15 +1080,148 @@ impl<'a> GenerateTypes<'a> {
                 .values()
                 .map(type_without_array)
                 .map(|v| type_mapper(&v).to_owned())
-                .map(|v| format_ident!("{}", v));
+                .map(|v| {
+                    if noskip {
+                        format_ident!("NoSkip{}", v)
+                    } else {
+                        format_ident!("{}", v)
+                    }
+                });
             let first_type = types
                 .values()
                 .map(type_without_array)
                 .map(|v| type_mapper(&v).to_owned())
-                .map(|v| format_ident!("{}", v))
+                .map(|v| {
+                    if noskip {
+                        format_ident!("NoSkip{}", v)
+                    } else {
+                        format_ident!("{}", v)
+                    }
+                })
                 .next();
 
-            let name = format_ident!("{}", name);
+            let skip_impl = if let Some(subtypes) = subtypes {
+                let vec = vec![];
+                let subtypes = subtypes
+                    .subtypes
+                    .as_ref()
+                    .unwrap_or(&vec)
+                    .iter()
+                    .map(get_type_name_str)
+                    .map(|t| format_ident!("{}", t))
+                    .collect::<Vec<_>>();
+                if noskip {
+                    let match_arms = subtypes.iter().map(|t| {
+                        quote! {
+                            Self::#t(v) => #skip_name :: #t( v.skip() )
+                        }
+                    });
+
+                    let mat = quote! {
+                        match self {
+                            #( #match_arms ),*
+                        }
+                    };
+                    quote! {
+                        impl IntoSkip for #no_skip_name {
+                             type Skip = #skip_name;
+                             fn into_skip(self) -> Self::Skip {
+                                self.skip()
+                             }
+                         }
+
+
+                         impl IntoSkip for #skip_name {
+                             type Skip = #skip_name;
+                             fn into_skip(self) -> Self::Skip {
+                                self.skip()
+                             }
+                         }
+
+                          impl IntoSkip for BoxWrapper<Box<#no_skip_name>> {
+                              type Skip = BoxWrapper<Box<#skip_name>>;
+                              fn into_skip(self) -> Self::Skip {
+                                  BoxWrapper::new_box(self.consume().skip())
+                              }
+                          }
+
+
+                          impl IntoSkip for BoxWrapper<Unbox<#no_skip_name>> {
+                              type Skip = BoxWrapper<Unbox<#skip_name>>;
+                              fn into_skip(self) -> Self::Skip {
+                                  BoxWrapper::new_unbox(self.consume().skip())
+                              }
+                          }
+
+                          impl #no_skip_name {
+                              pub fn noskip(self) -> #no_skip_name {
+                                  self
+                              }
+
+                              pub fn skip(self) -> #skip_name {
+                                  #mat
+                              }
+                          }
+                    }
+                } else {
+                    let match_arms = subtypes.iter().map(|t| {
+                        quote! {
+                            Self::#t(v) => #no_skip_name :: #t( v.noskip() )
+                        }
+                    });
+
+                    let mat = quote! {
+                        match self {
+                            #( #match_arms ),*
+                        }
+                    };
+                    quote! {
+                        impl IntoNoSkip for #name {
+                            type NoSkip = #no_skip_name;
+                            fn into_noskip(self) -> Self::NoSkip {
+                               self.noskip()
+                            }
+                        }
+
+
+                        impl IntoNoSkip for #no_skip_name {
+                            type NoSkip = #no_skip_name;
+                            fn into_noskip(self) -> Self::NoSkip {
+                               self
+                            }
+                        }
+
+                         impl IntoNoSkip for BoxWrapper<Box<#name>> {
+                             type NoSkip = BoxWrapper<Box<#no_skip_name>>;
+                             fn into_noskip(self) -> Self::NoSkip {
+                                 BoxWrapper::new_box(self.consume().noskip())
+                             }
+                         }
+
+
+                         impl IntoNoSkip for BoxWrapper<Unbox<#name>> {
+                             type NoSkip = BoxWrapper<Unbox<#no_skip_name>>;
+                             fn into_noskip(self) -> Self::NoSkip {
+                                 BoxWrapper::new_unbox(self.consume().noskip())
+                             }
+                         }
+
+
+
+                        impl #skip_name {
+                            pub fn noskip(self) -> #no_skip_name {
+                                #mat
+                            }
+
+                            pub fn skip(self) -> #skip_name {
+                                self
+                            }
+                        }
+                    }
+                }
+            } else {
+                quote! {}
+            };
             let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
                 quote! {
                     impl Default for #name {
@@ -792,6 +1248,7 @@ impl<'a> GenerateTypes<'a> {
                     ),*
                 }
                 #default
+                #skip_impl
             }
         } else {
             quote! {
@@ -877,6 +1334,69 @@ impl<'a> GenerateTypes<'a> {
                     };
 
                     quote! {
+                        impl IntoNoSkip for #name {
+                            type NoSkip = #no_skip_name;
+                            fn into_noskip(self) -> Self::NoSkip {
+                               self.noskip()
+                            }
+                        }
+
+
+                        impl IntoNoSkip for #no_skip_name {
+                            type NoSkip = #no_skip_name;
+                            fn into_noskip(self) -> Self::NoSkip {
+                               self
+                            }
+                        }
+
+                         impl IntoNoSkip for BoxWrapper<Box<#name>> {
+                             type NoSkip = BoxWrapper<Box<#no_skip_name>>;
+                             fn into_noskip(self) -> Self::NoSkip {
+                                 BoxWrapper::new_box(self.consume().noskip())
+                             }
+                         }
+
+
+                         impl IntoNoSkip for BoxWrapper<Unbox<#name>> {
+                             type NoSkip = BoxWrapper<Unbox<#no_skip_name>>;
+                             fn into_noskip(self) -> Self::NoSkip {
+                                 BoxWrapper::new_unbox(self.consume().noskip())
+                             }
+                         }
+
+                         //new
+
+                         impl IntoSkip for #no_skip_name {
+                             type Skip = #name;
+                             fn into_skip(self) -> Self::Skip {
+                                self.skip()
+                             }
+                         }
+
+
+                         impl IntoSkip for #name {
+                             type Skip = #name;
+                             fn into_skip(self) -> Self::Skip {
+                                self
+                             }
+                         }
+
+                          impl IntoSkip for BoxWrapper<Box<#no_skip_name>> {
+                              type Skip = BoxWrapper<Box<#name>>;
+                              fn into_skip(self) -> Self::Skip {
+                                  BoxWrapper::new_box(self.consume().into_skip())
+                              }
+                          }
+
+
+                          impl IntoSkip for BoxWrapper<Unbox<#no_skip_name>> {
+                              type Skip = BoxWrapper<Unbox<#name>>;
+                              fn into_skip(self) -> Self::Skip {
+                                  BoxWrapper::new_unbox(self.consume().into_skip())
+                              }
+                          }
+
+
                         impl #skip_name {
                             pub fn noskip(self) -> #no_skip_name {
                                 #mat
@@ -1408,7 +1928,14 @@ impl<'a> GenerateTypes<'a> {
                 .map(|v| {
                     let t = self
                         .choose_type
-                        .choose_type(v.types.as_slice(), Some(t), &v.name, !v.required, true)
+                        .choose_type(
+                            v.types.as_slice(),
+                            Some(t),
+                            &v.name,
+                            !v.required,
+                            true,
+                            false,
+                        )
                         .unwrap();
                     if should_wrap(&v.types) {
                         let g = format_ident!("{}", generic).to_token_stream();
@@ -1986,7 +2513,7 @@ impl<'a> GenerateTypes<'a> {
     }
 
     /// Generate an impl with getters to allow type erasure
-    fn generate_impl<T>(&self, name: &'a T) -> Result<TokenStream>
+    fn generate_impl<T>(&self, name: &'a T, complete: &mut BTreeSet<String>) -> Result<TokenStream>
     where
         T: AsRef<str> + 'a,
     {
@@ -2001,7 +2528,13 @@ impl<'a> GenerateTypes<'a> {
         let inputmedia_generator = self.generate_inputfile_getter(t)?;
         let constructor = self.generate_constructor(name)?;
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
-            let impls = subtypes.iter().map(|v| self.generate_trait_impl(&v).ok());
+            let impls = subtypes.iter().map(|v| {
+                if complete.insert(v.to_owned()) {
+                    self.generate_trait_impl(&v).ok()
+                } else {
+                    None
+                }
+            });
             quote! {
                 #( #impls )*
             }
@@ -2121,6 +2654,7 @@ impl<'a> GenerateTypes<'a> {
             .spec
             .types
             .values()
+            .filter(|p| p.name != "Update")
             .filter(|t| t.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0)
             .map(|t| {
                 let name = format_ident!("{}", get_type_name(t));
@@ -2230,9 +2764,27 @@ impl<'a> GenerateTypes<'a> {
                     if v.name == "type" && is_special_type(&v.types[0]) {
                         let name = format_ident!("NoSkip{}", v.types[0]);
                         Some(quote! {Box<#name>})
+                    } else if is_json_types(&v.types) {
+                        self.choose_type
+                            .choose_type(
+                                v.types.as_slice(),
+                                Some(t),
+                                &v.name,
+                                !v.required,
+                                false,
+                                !serde_skip,
+                            )
+                            .ok()
                     } else {
                         self.choose_type
-                            .choose_type(v.types.as_slice(), Some(t), &v.name, !v.required, false)
+                            .choose_type(
+                                v.types.as_slice(),
+                                Some(t),
+                                &v.name,
+                                !v.required,
+                                false,
+                                false,
+                            )
                             .ok()
                     }
                 })
