@@ -690,7 +690,7 @@ impl<'a> GenerateTypes<'a> {
               impl IntoNoSkip for BoxWrapper<Box<#skipname>> {
                   type NoSkip = BoxWrapper<Box<#skipname>>;
                   fn into_noskip(self) -> Self::NoSkip {
-                      self.into()
+                      self
                   }
               }
 
@@ -698,7 +698,7 @@ impl<'a> GenerateTypes<'a> {
               impl IntoNoSkip for BoxWrapper<Unbox<#skipname>> {
                   type NoSkip = BoxWrapper<Unbox<#skipname>>;
                   fn into_noskip(self) -> Self::NoSkip {
-                      self.into()
+                      self
                   }
               }
 
@@ -745,7 +745,7 @@ impl<'a> GenerateTypes<'a> {
                impl IntoSkip for BoxWrapper<Box<#name>> {
                    type Skip = BoxWrapper<Box<#name>>;
                    fn into_skip(self) -> Self::Skip {
-                       self.into()
+                       self
                    }
                }
 
@@ -753,7 +753,7 @@ impl<'a> GenerateTypes<'a> {
                impl IntoSkip for BoxWrapper<Unbox<#name>> {
                    type Skip = BoxWrapper<Unbox<#name>>;
                    fn into_skip(self) -> Self::Skip {
-                       self.into()
+                       self
                    }
                }
 
@@ -761,38 +761,38 @@ impl<'a> GenerateTypes<'a> {
             #[allow(clippy::from_over_into)]
              impl Into<BoxWrapper<Box<#skipname>>> for BoxWrapper<Box<#name>> {
                  fn into(self) -> BoxWrapper<Box<#skipname>> {
-                     BoxWrapper::new_box(self.consume().into())
+                     BoxWrapper::new_box(self.consume().into_noskip())
                  }
              }
 
            impl From<BoxWrapper<Box<#skipname>>> for BoxWrapper<Box<#name>> {
                  fn from(t: BoxWrapper<Box<#skipname>>) -> Self {
-                      BoxWrapper::new_box(t.consume().into())
+                      BoxWrapper::new_box(t.consume().into_skip())
                  }
            }
 
            #[allow(clippy::from_over_into)]
             impl Into<BoxWrapper<Unbox<#skipname>>> for BoxWrapper<Unbox<#name>> {
                 fn into(self) -> BoxWrapper<Unbox<#skipname>> {
-                    BoxWrapper::new_unbox(self.consume().into())
+                    BoxWrapper::new_unbox(self.consume().into_noskip())
                 }
             }
 
           impl From<BoxWrapper<Unbox<#skipname>>> for BoxWrapper<Unbox<#name>> {
                 fn from(t: BoxWrapper<Unbox<#skipname>>) -> Self {
-                     BoxWrapper::new_unbox(t.consume().into())
+                     BoxWrapper::new_unbox(t.consume().into_skip())
                 }
           }
 
             impl #skipname {
                 pub fn skip(self) -> #name {
-                   self.into()
+                   self.into_skip()
                 }
             }
 
             impl #name {
                 pub fn noskip(self) -> #skipname {
-                    self.into()
+                    self.into_noskip()
                 }
             }
         }
@@ -1113,7 +1113,7 @@ impl<'a> GenerateTypes<'a> {
                 if noskip {
                     let match_arms = subtypes.iter().map(|t| {
                         quote! {
-                            Self::#t(v) => #skip_name :: #t( v.skip() )
+                            Self::#t(v) => #skip_name :: #t( v.into_skip() )
                         }
                     });
 
@@ -1166,7 +1166,7 @@ impl<'a> GenerateTypes<'a> {
                 } else {
                     let match_arms = subtypes.iter().map(|t| {
                         quote! {
-                            Self::#t(v) => #no_skip_name :: #t( v.noskip() )
+                            Self::#t(v) => #no_skip_name :: #t( v.into_noskip() )
                         }
                     });
 
@@ -1410,7 +1410,7 @@ impl<'a> GenerateTypes<'a> {
                 } else {
                     let match_arms = subtypes.iter().map(|t| {
                         quote! {
-                            Self::#t(v) => #skip_name :: #t( v.skip() )
+                            Self::#t(v) => #skip_name :: #t( v.into_skip() )
                         }
                     });
 
@@ -1518,7 +1518,7 @@ impl<'a> GenerateTypes<'a> {
 
                 #[rhai_fn(global, name = "to_debug", pure)]
                 pub fn to_debug(my_enum: &mut Option<#name>) -> String {
-                    format!("{:?}", my_enum)
+                    format!("{my_enum:?}")
                 }
             }
         }
@@ -2665,6 +2665,9 @@ impl<'a> GenerateTypes<'a> {
                     format_ident!("rmp_serialize_array_{}", t.name.to_case(Case::Snake));
                 let test_name_serde =
                     format_ident!("json_serialize_{}", t.name.to_case(Case::Snake));
+
+                let test_debug_noskip = format_ident!("json_debug_{}", t.name.to_case(Case::Snake));
+
                 quote! {
                     #[test]
                     fn #test_name_msgpack() {
@@ -2683,6 +2686,15 @@ impl<'a> GenerateTypes<'a> {
                         let _: #name = rmp_serde::from_slice(ser.as_slice()).unwrap();
                     }
 
+                    #[test]
+                    fn #test_debug_noskip() {
+                        let t = #name::default();
+                        let _ = format!("{t:?}");
+                        let t = t.noskip();
+                        let _ = format!("{t:?}");
+                        let ser = rmp_serde::to_vec(&t).unwrap();
+                        let _: #name = rmp_serde::from_slice(ser.as_slice()).unwrap();
+                    }
 
                     #[test]
                     fn #test_name_serde() {
