@@ -117,11 +117,11 @@ impl<'a> GenerateMethods<'a> {
                 if should_wrap(&f.types) {
                     let generic = format_ident!("{}", g);
                     g = (g as u8 + 1) as char;
-                    let gen = quote! {
+                    let bound = quote! {
                         #generic: Into<#v>
                     };
                     let generic = quote! { #generic };
-                    (Some(gen), generic)
+                    (Some(bound), generic)
                 } else {
                     (None, v)
                 }

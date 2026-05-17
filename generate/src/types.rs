@@ -461,7 +461,7 @@ impl<'a> GenerateTypes<'a> {
                             let t = get_type_name_str(&f.name);
                             let t = format_ident!("{}", t);
                             quote! {
-                                Self::#t(ref v) => Some(v.#fieldname())
+                                Self::#t(v) => Some(v.#fieldname())
                             }
                         })
                         .collect_vec();
@@ -2484,7 +2484,7 @@ impl<'a> GenerateTypes<'a> {
                         .map(|t| format_ident!("{}", t))
                         .map(|t| {
                             quote! {
-                                Self::#t(ref v) => v.#fieldname()
+                                Self::#t(v) => v.#fieldname()
                             }
                         });
 

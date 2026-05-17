@@ -1,7 +1,8 @@
 [package]
 name = "ratma-tg-types"
 version = "0.0.79"
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 authors = ["Alex Ballmer <gnu3ra@riseup.net>", "RATMA Studio"]
 description = "Auto-generated idiomatic Rust types for the Telegram Bot API and WebApp. Fork of fmeef/botapi-rs."
 homepage = "https://github.com/RATMA-Studio/ratma-tg-types"

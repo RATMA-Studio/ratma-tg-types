@@ -214,9 +214,8 @@ impl Webhook {
             }
 
             self.teardown().await?;
-            if let Err(err) = fut.await {
-                yield Err(anyhow!(err).into());
-            }
+            let Err(err) = fut.await;
+            yield Err(anyhow!(err).into());
         };
 
         Ok(Box::pin(s))
