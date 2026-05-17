@@ -87,34 +87,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
 
 [[package]]
-name = "botapi"
-version = "0.0.79"
-dependencies = [
- "anyhow",
- "async-stream",
- "enum_dispatch",
- "futures-core",
- "futures-util",
- "http-body-util",
- "hyper",
- "hyper-util",
- "log",
- "ordered-float",
- "rand 0.9.4",
- "reqwest",
- "rhai",
- "rmp-serde",
- "serde",
- "serde_json",
- "serde_stacker",
- "serde_urlencoded",
- "tggen",
- "tokio",
- "tokio-test",
- "uuid",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1026,6 +998,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratma-tg-types"
+version = "0.0.79"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "enum_dispatch",
+ "futures-core",
+ "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "ordered-float",
+ "rand 0.9.4",
+ "ratma-tg-types-codegen",
+ "reqwest",
+ "rhai",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "serde_stacker",
+ "serde_urlencoded",
+ "tokio",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
+name = "ratma-tg-types-codegen"
+version = "0.0.79"
+dependencies = [
+ "anyhow",
+ "convert_case",
+ "itertools",
+ "lazy_static",
+ "once_cell",
+ "quote",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "regex"
 version = "1.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1454,21 +1469,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "tggen"
-version = "0.0.79"
-dependencies = [
- "anyhow",
- "convert_case",
- "itertools",
- "lazy_static",
- "once_cell",
- "quote",
- "regex",
- "serde",
- "serde_json",
 ]
 
 [[package]]

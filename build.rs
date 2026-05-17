@@ -3,7 +3,7 @@ use std::fs;
 use anyhow::Result;
 use std::process::Command;
 use std::sync::Mutex;
-use tggen::Generate;
+use ratma_tg_types_codegen::Generate;
 
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=generate/src/");

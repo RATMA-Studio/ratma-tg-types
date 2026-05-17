@@ -11,9 +11,9 @@
 //! # Examples
 //! ## Use webhooks to fetch updates
 //! ```no_run
-//! use botapi::gen_types::FileData;
-//! use botapi::bot::Bot;
-//! use botapi::ext::{Webhook, BotUrl};
+//! use ratma_tg_types::gen_types::FileData;
+//! use ratma_tg_types::bot::Bot;
+//! use ratma_tg_types::ext::{Webhook, BotUrl};
 //! use std::net::{SocketAddr, Ipv4Addr, IpAddr};
 //! use futures_util::StreamExt;
 //! # tokio_test::block_on(async {
@@ -37,8 +37,8 @@
 //! ```
 //! ## Send messages or media
 //! ```no_run
-//! use botapi::gen_types::{FileData, Message, ReplyParametersBuilder};
-//! use botapi::bot::Bot;
+//! use ratma_tg_types::gen_types::{FileData, Message, ReplyParametersBuilder};
+//! use ratma_tg_types::bot::Bot;
 //! # tokio_test::block_on(async {
 //! # let message = Message::default();
 //! let client = Bot::new("sometoken").unwrap();

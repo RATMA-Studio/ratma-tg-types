@@ -1,5 +1,5 @@
 use anyhow::Result;
-use botapi::{bot::BotBuilder, ext::LongPoller};
+use ratma_tg_types::{bot::BotBuilder, ext::LongPoller};
 use futures_util::stream::StreamExt;
 
 #[tokio::main]

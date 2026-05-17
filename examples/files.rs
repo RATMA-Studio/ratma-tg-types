@@ -1,5 +1,5 @@
 use anyhow::Result;
-use botapi::{bot::BotBuilder, gen_types::FileData};
+use ratma_tg_types::{bot::BotBuilder, gen_types::FileData};
 use reqwest::multipart::Part;
 
 #[tokio::main]

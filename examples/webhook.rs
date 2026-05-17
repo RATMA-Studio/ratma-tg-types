@@ -1,5 +1,5 @@
 use anyhow::Result;
-use botapi::{
+use ratma_tg_types::{
     bot::BotBuilder,
     ext::{BotUrl, Webhook},
 };
