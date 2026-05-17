@@ -84,6 +84,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratma-tg-types-codegen"
+version = "0.0.79"
+dependencies = [
+ "anyhow",
+ "convert_case",
+ "itertools",
+ "lazy_static",
+ "once_cell",
+ "quote",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "regex"
 version = "1.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -164,21 +179,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "tggen"
-version = "0.0.79"
-dependencies = [
- "anyhow",
- "convert_case",
- "itertools",
- "lazy_static",
- "once_cell",
- "quote",
- "regex",
- "serde",
- "serde_json",
 ]
 
 [[package]]
