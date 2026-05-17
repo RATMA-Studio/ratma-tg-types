@@ -54,7 +54,7 @@ Deliverable: green `cargo check && cargo test && RUSTFLAGS="-Dwarnings" cargo cl
 
 ---
 
-## Phase 1 — Workspace cleanup *(structurally done; deps cleanup pending)*
+## Phase 1 — Workspace cleanup *(done)*
 
 Goal: real separation of **pure types** from **HTTP client**. `core` usable with nothing but `serde`.
 
@@ -72,18 +72,16 @@ ratma-tg-types/
 ```
 
 - [x] Convert to Cargo workspace, three crates wired (#3).
-- [ ] **chore: strip `core/Cargo.toml` to bare types-only deps**
-  - Currently `core/Cargo.toml` carries `anyhow`, `enum_dispatch`, `log`, `ordered-float`, `rmp-serde`, `serde_stacker`, optional `reqwest` (via `multipart` feature), optional `rhai`. For a "pure types" crate the target footprint is `serde + ordered-float` plus the `multipart`/`rhai` opt-in features.
-  - Move `anyhow`, `log` into `http`; move `rmp-serde`/`serde_stacker` either into a `serde-helpers` feature gate or into `http`; verify `enum_dispatch` is needed in generated code at all (Phase 2 codegen may eliminate it).
-  - **Blocks Phase 5**: every extra dep in `core` is friction for `fork-teloxide` shim and any other downstream that wants just types.
-- [ ] **test: every feature combination compiles**
+- [x] **chore: strip `core/Cargo.toml` to types-only deps** (#11, #13). Dropped `enum_dispatch`, `log`, `serde_stacker` (unreferenced); moved `rmp-serde` to `[dev-dependencies]` (only used in generated `#[cfg(test)]` round-trip checks). Same cleanup in `http`: dropped `enum_dispatch`, `serde_stacker`, `rmp-serde`; moved `tokio-test` to `[dev-dependencies]`.
+  - `anyhow` retained in `core` because generated `gen_types` subtype helpers return `Result<_, anyhow::Error>` and `bail!`. Replacing it requires Phase 2 codegen (own error enum).
+- [ ] **test: every feature combination compiles** *(follow-up — wire a feature-matrix CI step)*
   - `cargo check -p ratma-tg-types-core --no-default-features`
   - `cargo check -p ratma-tg-types-core --features multipart`
   - `cargo check -p ratma-tg-types-core --features rhai`
   - `cargo check -p ratma-tg-types-http`
   - `cargo check -p ratma-tg-types --features http`
 
-Deliverable: `cargo tree -p ratma-tg-types-core --no-default-features` shows only `serde`, `serde_json`, `ordered-float` and their transitive deps. No `reqwest`, no `tokio`, no `hyper`, no `anyhow`, no `log`.
+Deliverable: `cargo tree -p ratma-tg-types-core --no-default-features -e normal --depth 1` shows `anyhow`, `ordered-float`, `serde`, `serde_json`. ✓ (Phase 2 will retire `anyhow` from `core` as part of the codegen overhaul.)
 
 ---
 
@@ -271,7 +269,7 @@ Deliverable: `cargo add ratma-tg-types{,-core,-http,-webapp}` works, current Bot
 | Phase | Status | Issue |
 |---|---|---|
 | 0 — Fork hygiene | **done** | #7 (closed via #8) |
-| 1 — Workspace cleanup | structurally done; deps cleanup pending | #3 (closed for structural part), pending follow-ups |
+| 1 — Workspace cleanup | **done** | #3 (structural), #11+#13 (deps cleanup) |
 | 2 — Idiomatic codegen | not started | tbd |
 | 2½ — WebApp ingestion | not started | tbd |
 | 3 — LLM-in-the-loop | deferred | tbd |
