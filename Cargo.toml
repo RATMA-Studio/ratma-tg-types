@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/codegen"]
+members = ["crates/codegen", "crates/core"]
 resolver = "3"
 
 [package]
@@ -61,4 +61,6 @@ ratma-tg-types-codegen = { path = "./crates/codegen", version = "0.0.79" }
 anyhow = "1.0.102"
 
 [features]
+default = ["multipart"]
+multipart = ["reqwest/multipart"]
 rhai = ["dep:rhai"]

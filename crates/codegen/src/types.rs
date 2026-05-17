@@ -338,13 +338,13 @@ impl<'a> GenerateTypes<'a> {
         Ok(quote! {
             use serde::{Deserialize, Serialize};
             use std::fmt;
+            #[cfg(feature = "multipart")]
             use anyhow::{anyhow, Result};
-            use reqwest::multipart::Form;
-            use crate::bot::Part;
+            #[cfg(feature = "multipart")]
+            use crate::multipart::{Form, Part};
             #[cfg(feature = "rhai")]
             use rhai::{CustomType, TypeBuilder};
             use std::default::Default;
-            // use std::borrow::Cow;
         })
     }
 
@@ -815,6 +815,7 @@ impl<'a> GenerateTypes<'a> {
     fn generate_inputfile_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.name == INPUT_FILE {
             let q = quote! {
+               #[cfg(feature = "multipart")]
                pub fn convert_form(self, data: Form) -> Result<(Form, String)> {
                       match self {
                         InputFile::Bytes(FileBytes { name, bytes: Some(bytes) }) => {
@@ -839,6 +840,7 @@ impl<'a> GenerateTypes<'a> {
     fn generate_inputmedia_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.is_media() {
             let q = quote! {
+               #[cfg(feature = "multipart")]
                fn convert_form(self, data: Form) -> Result<(Form, String)> {
                    match self.media {
                         Some(InputFile::Bytes(FileBytes { name, bytes: Some(bytes) })) => {
@@ -1711,6 +1713,7 @@ impl<'a> GenerateTypes<'a> {
             pub enum FileData {
                 Bytes(Vec<u8>),
                 String(String),
+                #[cfg(feature = "multipart")]
                 Part(Part)
             }
 
@@ -1860,20 +1863,8 @@ impl<'a> GenerateTypes<'a> {
             // }
 
 
+            #[cfg(feature = "multipart")]
             impl FileData {
-
-                /*
-                pub fn to_inputfile(self, name: String) -> #input_file {
-                     match self {
-                        FileData::Bytes(bytes) => #input_file::Bytes(FileBytes {
-                            name: name,
-                            bytes: Some(bytes),
-                        }),
-                        FileData::String(name) => #input_file::String(name),
-                    }
-                }
-                */
-
                 pub fn convert_form(self, data: Form, name: String) -> Result<(Form, String)> {
                       match self {
                         Self::Bytes(bytes) => {

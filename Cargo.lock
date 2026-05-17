@@ -1041,6 +1041,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratma-tg-types-core"
+version = "0.0.79"
+dependencies = [
+ "anyhow",
+ "enum_dispatch",
+ "log",
+ "ordered-float",
+ "ratma-tg-types-codegen",
+ "reqwest",
+ "rhai",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "serde_stacker",
+]
+
+[[package]]
 name = "regex"
 version = "1.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

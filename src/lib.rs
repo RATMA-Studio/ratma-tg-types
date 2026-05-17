@@ -59,6 +59,11 @@
 #![recursion_limit = "256"]
 /// Wrapper type for telegram bot api
 pub mod bot;
+#[cfg(feature = "multipart")]
+/// Re-exports of reqwest multipart primitives used by generated types.
+pub mod multipart {
+    pub use reqwest::multipart::{Form, Part};
+}
 /// Various helpers to manage receiving updates via webhooks or long polling,
 /// or to better map json types onto rust design patterns
 pub mod ext;
