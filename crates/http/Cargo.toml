@@ -12,7 +12,6 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0.102"
 async-stream = "0.3.6"
-enum_dispatch = "0.3.13"
 futures-core = { version = "0.3.32", features = ["cfg-target-has-atomic"] }
 futures-util = "0.3.32"
 http-body-util = "0.1.3"
@@ -24,10 +23,8 @@ ratma-tg-types-core = { path = "../core", version = "0.0.79", features = ["multi
 rand = "0.10.1"
 reqwest = { version = "0.12.28", features = ["json", "multipart", "stream"] }
 rhai = { version = "1.24.0", optional = true, features = ["internals"] }
-rmp-serde = "1.3.1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.149", features = ["unbounded_depth"] }
-serde_stacker = "0.1.14"
 serde_urlencoded = "0.7.1"
 tokio = { version = "1.52.3", features = [
     "net",
@@ -37,8 +34,10 @@ tokio = { version = "1.52.3", features = [
     "macros",
     "rt-multi-thread"
 ] }
-tokio-test = "0.4.5"
 uuid = "1.23.1"
+
+[dev-dependencies]
+tokio-test = "0.4.5"
 
 [build-dependencies]
 anyhow = "1.0.102"
