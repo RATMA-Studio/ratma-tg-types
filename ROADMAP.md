@@ -1,103 +1,126 @@
 # ratma-tg-types roadmap
 
-Companion to [tracking issue #1](https://github.com/RATMA-Studio/ratma-tg-types/issues/1). Lists every concrete step from the current state (a renamed copy of [`fmeef/botapi-rs`](https://github.com/fmeef/botapi-rs)) to a production-grade, standalone Rust types crate for Telegram Bot API + WebApp that other Telegram crates in the ecosystem can adopt.
+Companion to [tracking issue #1](https://github.com/RATMA-Studio/ratma-tg-types/issues/1). Concrete steps from the current state (a renamed fork of [`fmeef/botapi-rs`](https://github.com/fmeef/botapi-rs)) to a production-grade, standalone Rust types crate family covering the **entire Telegram surface** — Bot API and WebApp / Mini Apps — and consumed by every RATMA Rust repo.
 
 ## Vision
 
-One canonical Rust crate of Telegram Bot API types, auto-synced to the latest spec, idiomatic enough that `teloxide`, `frankenstein`, `rust-tg-bot` and friends can adopt it as a foundation instead of each maintaining their own hand-written copies.
+**Telegram itself is the only source of truth.** Not `teloxide`, not `frankenstein`, not `botapi-rs`. Each of those maintains its own hand-written copy of Telegram's types, drifts from spec on its own schedule, and exposes its own slightly-incompatible API surface. The cost is duplicated effort across the ecosystem and quiet bugs when a project's copy lags Telegram's docs.
 
-## Source of truth
+`ratma-tg-types` collapses that into one Rust crate family:
 
-- Spec source: git submodule [`PaulSonOfLars/telegram-bot-api-spec`](https://github.com/PaulSonOfLars/telegram-bot-api-spec) → `telegram-bot-api-spec/api.json`.
-- Currently pinned at commit `9dca8b0` (Bot API 10.0, May 8 2026).
-- Submodule is bumped by infra automation (see Phase 4).
+- **One codegen pipeline.** Reads Telegram's published surface (Bot API JSON via `PaulSonOfLars/telegram-bot-api-spec`; WebApp HTML via a scraper that lives here). Emits idiomatic Rust.
+- **One set of types, two domains.** `ratma-tg-types-core` for Bot API, `ratma-tg-types-webapp` for WebApp / Mini Apps. Shared ID newtypes (`UserId`, `ChatId`, …) sit in a small common crate.
+- **Auto-sync.** When Telegram ships a new version, a nightly CI job bumps the spec, regenerates, runs the test suite, and opens an auto-PR. Drift goes from "discovered when someone files a bug" to "visible in a green/red review queue within 24 h".
+- **Every RATMA Rust project consumes one source.** No hand-written copies anywhere in the org.
+
+We are not waiting for the wider ecosystem to converge on a common types crate — every project has done its own thing for years and won't stop. We build the unified crate for ourselves and ship it; if `teloxide` or others want to adopt, the migration path will exist (Phase 5).
+
+## Source of truth — two surfaces
+
+| Surface | Doc URL | Spec source | Status |
+|---|---|---|---|
+| **Bot API** | `core.telegram.org/bots/api` | git submodule [`PaulSonOfLars/telegram-bot-api-spec`](https://github.com/PaulSonOfLars/telegram-bot-api-spec) → `telegram-bot-api-spec/api.json` | submodule pinned at commit `9dca8b0` (Bot API 10.0, May 8 2026) |
+| **WebApp / Mini Apps** | `core.telegram.org/bots/webapps` | **TBD** — no community spec exists. We write a scraper that emits `webapp.json` in the same shape as `api.json`. | not started |
+
+Submodules are bumped by infra automation (see Phase 4).
+
+## Consumer matrix
+
+Concrete downstream Rust crates that will/do depend on `ratma-tg-types`:
+
+| Consumer | Surface needed | Current state | Target |
+|---|---|---|---|
+| [`RATMA-Studio/fork-teloxide`](https://github.com/RATMA-Studio/fork-teloxide) | Bot API types | Hand-written `crates/teloxide-core/src/types/*.rs` (~6000 LOC) | `crates/teloxide-types-shim/` re-exports from `ratma-tg-types-core` (Phase 5) |
+| [`RATMA-Studio/ratma-auth-rs`](https://github.com/RATMA-Studio/ratma-auth-rs) | WebApp `init_data`, `User` | Depends on third-party `init_data_rs` (its own hand-written copy of WebApp types + HMAC validator) | Drop `init_data_rs`, depend on `ratma-tg-types-webapp` (which gains the `init_data::{parse,validate}` helpers) |
+| `RATMA-Studio/ratma-studio-tg-bot` and other bot backends | Bot API types | Already on `fork-teloxide` | Inherits via fork-teloxide shim |
+| `RATMA-Studio/ratma-studio-tma`, `rori-shop-tma`, `Roa-Mini-App` TMA backends | WebApp types | Hand-written or via `init_data_rs` | Direct dep on `ratma-tg-types-webapp` |
+
+The fork-teloxide shim is the single largest piece of work in Phase 5; the WebApp consumers are smaller and switch over once `ratma-tg-types-webapp` exists at parity with `init_data_rs`.
 
 ---
 
 ## Phase 0 — Fork hygiene *(in progress)*
 
-Goal: turn the cloned upstream into a clean RATMA-branded baseline that builds green.
+Goal: clean RATMA-branded baseline that builds green.
 
 - [x] Rename crate `botapi` → `ratma-tg-types`, generator `tggen` → `ratma-tg-types-codegen`, repoint URLs (#1, commit `3e8a47e`).
+- [x] Workspace split structure (#3, three crates land: `codegen`, `core`, `http`).
 - [ ] **chore: bump build/runtime deps to current stable**
   - Audit `reqwest`, `tokio`, `serde`, `hyper`, `hyper-util`, `ordered-float`, `rand`, `serde_stacker`, `rmp-serde`. Re-pin to latest minor compatible with our MSRV.
   - Run `cargo update`, `cargo audit`, `cargo deny check advisories`.
-  - Risk: `reqwest` major-version bumps may break `multipart::Part` usage in `bot.rs`. Hold any major bump until Phase 2 (we may drop reqwest entirely).
-- [ ] **chore: edition 2024**
-  - Upstream is on `edition = "2021"`. Move all three sub-crates (root, `generate/`) to `edition = "2024"` to align with `fork-teloxide` and current toolchain.
-- [ ] **chore: MSRV declaration**
-  - Add `rust-version = "..."` to all `Cargo.toml`s. Document the floor.
-- [ ] **chore: rustfmt + clippy gates**
-  - Add `rustfmt.toml` matching `fork-teloxide` conventions.
-  - Add `clippy.toml` with `msrv` and our preferred lints.
-  - Optional `deny(missing_docs)` is **out of scope** until we control the codegen output (Phase 2).
+  - Risk: `reqwest` major-version bumps may break `multipart::Part` usage. Hold a major bump until Phase 2 (we may drop the reqwest dep from `core` entirely).
+- [x] **chore: edition 2024 / `rust-version = "1.95"`** (in workspace).
+- [ ] **chore: rustfmt + clippy gates in CI**
+  - `rustfmt.toml` already aligned with `fork-teloxide` conventions.
+  - `clippy.toml` exists; wire to CI with `-D warnings`.
 - [ ] **chore: license attribution**
   - Keep upstream `LICENSE` (MIT) untouched.
-  - Add `NOTICE.md` crediting `fmeef/botapi-rs` (Alex Ballmer) and `PaulSonOfLars/telegram-bot-api-spec`.
+  - `NOTICE.md` credits `fmeef/botapi-rs` (Alex Ballmer) and `PaulSonOfLars/telegram-bot-api-spec`.
 
-Deliverable: green `cargo check && cargo test && cargo clippy -- -D warnings` against latest stable Rust, no behavioral change.
+Deliverable: green `cargo check && cargo test && RUSTFLAGS="-Dwarnings" cargo clippy --all-targets` against latest stable, no behavioral change.
 
 ---
 
-## Phase 1 — Workspace split
+## Phase 1 — Workspace cleanup *(structurally done; deps cleanup pending)*
 
-Goal: separate **pure types** from **HTTP client** so types are usable without pulling reqwest/tokio/hyper.
+Goal: real separation of **pure types** from **HTTP client**. `core` usable with nothing but `serde`.
 
-Three-crate Cargo workspace:
+Current crate layout:
 
 ```
 ratma-tg-types/
-├── Cargo.toml             # workspace root only
+├── Cargo.toml             # workspace root + façade crate
 ├── crates/
-│   ├── codegen/           # tggen renamed; pure Rust code generator
-│   ├── core/              # ratma-tg-types-core — pure types, NO http
-│   └── http/              # ratma-tg-types-http — async client, depends on core
+│   ├── codegen/           # ratma-tg-types-codegen — build-time generator
+│   ├── core/              # ratma-tg-types-core — pure types (Bot API)
+│   └── http/              # ratma-tg-types-http — async client
+├── telegram-bot-api-spec/ # submodule, source of truth for Bot API
+└── (Phase 2) crates/webapp/   # ratma-tg-types-webapp — WebApp types
 ```
 
-- [ ] **refactor: convert to Cargo workspace**
-  - Root `Cargo.toml` becomes `[workspace]` only. Move current sources under `crates/`.
-- [ ] **feat: `ratma-tg-types-core` crate (pure types)**
-  - Codegen splits output: `gen_types.rs` → `crates/core/src/gen.rs`; methods stay in `http` for now.
-  - Strip dependencies that types pull from the client: replace `use crate::bot::Part` and `reqwest::multipart::Form` usage in generated types with a feature-gated abstraction (`MultipartPart` trait in `core`, impl in `http`).
-  - Output dep tree of `core`: `serde`, `serde_json`, `ordered-float`. **No** reqwest, tokio, hyper.
-- [ ] **feat: `ratma-tg-types-http` crate (client)**
-  - Hosts `Bot`, `BotBuilder`, `ext::LongPoller`, `ext::Webhook`, multipart upload, ratelimit handling, `gen_methods.rs`.
-  - Depends on `ratma-tg-types-core` + the heavyweight async stack.
-- [ ] **feat: re-export façade**
-  - Top-level `ratma-tg-types` crate becomes a thin façade: `pub use ratma_tg_types_core::*;` + `#[cfg(feature = "http")] pub use ratma_tg_types_http::*;`.
-  - Users wanting only types: `cargo add ratma-tg-types --no-default-features`.
-- [ ] **test: workspace builds in all feature combinations**
-  - `core` alone, `core + http`, `core + http + rhai`.
+- [x] Convert to Cargo workspace, three crates wired (#3).
+- [ ] **chore: strip `core/Cargo.toml` to bare types-only deps**
+  - Currently `core/Cargo.toml` carries `anyhow`, `enum_dispatch`, `log`, `ordered-float`, `rmp-serde`, `serde_stacker`, optional `reqwest` (via `multipart` feature), optional `rhai`. For a "pure types" crate the target footprint is `serde + ordered-float` plus the `multipart`/`rhai` opt-in features.
+  - Move `anyhow`, `log` into `http`; move `rmp-serde`/`serde_stacker` either into a `serde-helpers` feature gate or into `http`; verify `enum_dispatch` is needed in generated code at all (Phase 2 codegen may eliminate it).
+  - **Blocks Phase 5**: every extra dep in `core` is friction for `fork-teloxide` shim and any other downstream that wants just types.
+- [ ] **test: every feature combination compiles**
+  - `cargo check -p ratma-tg-types-core --no-default-features`
+  - `cargo check -p ratma-tg-types-core --features multipart`
+  - `cargo check -p ratma-tg-types-core --features rhai`
+  - `cargo check -p ratma-tg-types-http`
+  - `cargo check -p ratma-tg-types --features http`
 
-Deliverable: a `ratma-tg-types-core` that compiles with `serde` only and exposes every Bot API type in pure form.
+Deliverable: `cargo tree -p ratma-tg-types-core --no-default-features` shows only `serde`, `serde_json`, `ordered-float` and their transitive deps. No `reqwest`, no `tokio`, no `hyper`, no `anyhow`, no `log`.
 
 ---
 
 ## Phase 2 — Idiomatic codegen overhaul
 
-Goal: stop producing flat-struct sum types. Generate enums where Telegram intends them.
+Goal: stop producing flat-struct sum types. Generate enums where Telegram intends them. Apply to **both** Bot API and WebApp.
 
 - [ ] **feat: subtype-aware codegen**
-  - Generator already detects `subtype_of` from the spec. Use it: produce `enum ChatMember { Owner(ChatMemberOwner), Administrator(...), ... }` instead of optional-field-soup.
-  - Apply to: `ChatMember`, `MessageOrigin`, `BackgroundType`, `BackgroundFill`, `ChatBoostSource`, `ReactionType`, `MaybeInaccessibleMessage`, `MenuButton`, `InlineQueryResult`, `InputMessageContent`, `PassportElementError`, `BotCommandScope`, `BackgroundFill`, and any other `subtype_of` parent in the schema.
-  - Use `#[serde(tag = "...", rename_all = "snake_case")]` driven by the discriminator field (already extracted via regex from description in upstream — extend to all known discriminators).
+  - Generator already detects `subtype_of` from `api.json`. Use it: produce `enum ChatMember { Owner(ChatMemberOwner), Administrator(...), ... }` instead of optional-field-soup with a `tg_status: String` discriminator.
+  - Apply to: `ChatMember`, `MessageOrigin`, `BackgroundType`, `BackgroundFill`, `ChatBoostSource`, `ReactionType`, `MaybeInaccessibleMessage`, `MenuButton`, `InlineQueryResult`, `InputMessageContent`, `PassportElementError`, `BotCommandScope`, `RevenueWithdrawalState`, `TransactionPartner`, `OwnedGift`, `StoryAreaType`, plus any `subtype_of` parent the schema reports.
+  - Use `#[serde(tag = "...", rename_all = "snake_case")]` driven by the discriminator field already extracted by upstream codegen.
 - [ ] **feat: enum extraction for fields with constrained string values**
-  - Parse description text for `"foo"`, `"bar"` enumerations (e.g. `MessageEntity.type` → `MessageEntityKind { Mention, Hashtag, Bold, ... }`).
+  - Parse field descriptions for `"foo"`, `"bar"` enumerations (e.g. `MessageEntity.type` → `MessageEntityKind { Mention, Hashtag, Bold, ... }`).
   - Replace raw `String` fields with the generated enum.
-  - **Critical** for `MessageEntity.type`, `Chat.type`, `Update.*` discriminators, `ChatMemberStatus`, `Sticker.type`, `PollType`, `MaskPosition.point`, `ChatAction`, `DiceEmoji`.
+  - **Critical fields**: `MessageEntity.type`, `Chat.type`, `Update.*` discriminators, `ChatMemberStatus`, `Sticker.type`, `PollType`, `MaskPosition.point`, `ChatAction`, `DiceEmoji`, `ParseMode`.
 - [ ] **feat: ID newtypes**
   - Generate `pub struct UserId(pub i64)`, `pub struct ChatId(pub i64)`, `pub struct MessageId(pub i32)`, `pub struct FileId(pub String)`, `pub struct BusinessConnectionId(pub String)`, `pub struct CallbackQueryId(pub String)`, etc.
-  - Drive from a configurable mapping table (e.g. `crates/codegen/id_types.toml`): which JSON field names map to which newtype.
-  - Mirror `teloxide-core` conventions for adoption-friendliness.
+  - Driven by `crates/codegen/id_types.toml` mapping table — what JSON field name maps to what newtype.
+  - Mirror `teloxide-core` conventions for adoption-friendliness (Phase 5 fork-teloxide shim becomes trivial).
 - [ ] **feat: `#[non_exhaustive]` on every generated enum**
   - Prevents downstream from breaking when Telegram adds variants.
-  - For untagged enums, add `#[serde(other)] Unknown` catch-all so deserialization survives unknown values.
+  - For untagged enums, add `#[serde(other)] Unknown` catch-all so deserialization survives unknown values from a server running ahead of our pinned spec.
 - [ ] **feat: drop `NoSkip*` doubled structs**
-  - Only kept for `rmp_serde` (array-format) edge case. Gate behind `feature = "noskip"` instead of unconditional generation. Removes ~30% of `gen_types.rs` line count.
+  - Only useful for `rmp_serde` array-format edge case. Gate behind `feature = "noskip"` instead of unconditional generation. Removes ~30% of `gen.rs` line count.
 - [ ] **feat: drop `BoxWrapper<Unbox<T>>` abstraction**
-  - Replace with plain `Box<T>` where the MFAS cycle-breaker decides indirection is required. Upstream's `BoxWrapper` exists to make API stable across regenerations — we get the same effect by pinning the MFAS seed (deterministic order).
+  - Replace with plain `Box<T>` where the MFAS cycle-breaker decides indirection is required. The original BoxWrapper exists to make API stable across regenerations — we get the same effect by pinning the MFAS seed (deterministic order across runs).
 - [ ] **feat: `#[serde(deny_unknown_fields)]` opt-in**
-  - Strict-mode feature for users who want to detect Telegram API schema drift in tests.
+  - Strict-mode feature for users who want to detect spec drift in tests.
+- [ ] **feat: `Default` where every required field has a Default**
+  - Same predicate logic we shipped in fork-teloxide PR #163 (extended payload codegen). Applies here too.
 
 Deliverable: `MessageEntity` from `core` looks like
 
@@ -126,25 +149,43 @@ pub enum MessageEntityKind {
 
 ---
 
-## Phase 3 — LLM-in-the-loop refinement
+## Phase 2½ — WebApp ingestion *(new track)*
 
-Goal: handle the long tail of "the codegen produced something dumb, a human would write it differently."
+Goal: cover the WebApp / Mini Apps surface with the **same codegen** that handles Bot API.
+
+- [ ] **infra: WebApp scraper**
+  - No community spec exists for `core.telegram.org/bots/webapps`. We write a parser that lives at `crates/codegen/src/webapp_scrape.rs` and emits `telegram-bot-api-spec/webapp.json` (or a sibling location) in the same JSON shape `api.json` uses.
+  - Targeted surface: `WebApp`, `WebAppInitData`, `WebAppUser`, `WebAppChat`, `WebAppMessage`, `WebAppData`, `MainButton`, `SecondaryButton`, `BackButton`, `SettingsButton`, `HapticFeedback`, `CloudStorage`, `BiometricManager`, `LocationManager`, `DeviceStorage`, `SecureStorage`, plus the `Telegram.WebApp` namespace's methods (`expand`, `close`, `sendData`, `requestFullscreen`, etc.) where Rust bindings make sense (i.e. data structures and event payloads, not the JS methods themselves unless wasm-bindgen wraps them — separate question).
+  - Output cadence: run on the same nightly CI bump as `api.json`.
+- [ ] **feat: `ratma-tg-types-webapp` crate**
+  - Add `crates/webapp/` to the workspace.
+  - `build.rs` consumes `webapp.json` via `ratma-tg-types-codegen` (same code generator, second input).
+  - Same idiomatic-Rust rules as Phase 2: enums for sum types, ID newtypes, `#[non_exhaustive]`, etc.
+- [ ] **feat: `init_data::{parse, validate}` helpers**
+  - Bonus to make `ratma-auth-rs` migration tractable. HMAC-SHA256 validation per [Telegram docs](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app), `auth_date` TTL check.
+  - Lives behind `feature = "init-data"` so callers that only want the types don't pay for `hmac`/`sha2`.
+- [ ] **feat: shared ID newtypes between Bot API and WebApp**
+  - `WebAppUser.id` and Bot API `User.id` are the same Telegram user id. Both fields use `UserId` from a shared dependency (`ratma-tg-types-ids` micro-crate or a re-export from `-core`).
+  - WebApp `User` vs Bot API `User` are **not** unified — different field sets, different serialization contexts. Don't try.
+- [ ] **test: round-trip a real `init_data` against `ratma-auth-rs`'s current expected output**
+  - Pin a known-good `init_data` payload, parse with both `init_data_rs` (current dep) and `ratma-tg-types-webapp::init_data::parse`, assert structural equivalence.
+
+Deliverable: `ratma-tg-types-webapp` at parity with `init_data_rs` plus the broader WebApp surface (buttons, storage, haptics) generated.
+
+---
+
+## Phase 3 — LLM-in-the-loop refinement *(deferred)*
+
+Defer until Phase 2 base codegen consistently produces ≥90% idiomatic Rust on its own. The LLM is for the long tail of "codegen wrote something dumb, a human would write it differently."
+
+When we get to it:
 
 - [ ] **infra: codegen-postprocess Claude pipeline**
-  - After `tggen` writes `gen.rs`, a postprocess step prompts Claude with:
-    - the raw generated chunk;
-    - the corresponding spec fragment;
-    - style anchors (existing hand-tuned types we want to mirror);
-    - the project's rustfmt + clippy lints.
-  - Claude returns a patch. Apply, run `cargo check`, run **golden-snapshot diff** of the public API surface (`cargo public-api`).
-  - If the patch changes public API in unexpected ways → fail CI, surface diff for human review.
+  - After `tggen` writes `gen.rs`, postprocess prompts Claude with the raw chunk, the spec fragment, style anchors, and rustfmt/clippy config. Claude returns a patch. Apply, `cargo check`, golden-snapshot-diff the public API surface (`cargo public-api`). If unexpected breakage → fail CI for human review.
 - [ ] **feat: deterministic, pinned model + temperature 0**
-  - Pin Claude model version to avoid output drift across releases.
-  - Store all postprocess prompts in `crates/codegen/prompts/` so changes are reviewable.
+  - Pin model version. Store prompts under `crates/codegen/prompts/` so they're reviewable.
 - [ ] **feat: human-curated overrides file**
-  - `crates/codegen/overrides.toml` for cases that even Claude gets wrong; codegen consults overrides last and they win.
-
-Deliverable: when Telegram releases Bot API 10.1, regeneration produces idiomatic Rust on the first try ≥95% of the time; the remaining ≤5% are caught by golden tests for human review.
+  - `crates/codegen/overrides.toml` consulted last; overrides win over both codegen and LLM.
 
 ---
 
@@ -153,39 +194,53 @@ Deliverable: when Telegram releases Bot API 10.1, regeneration produces idiomati
 Goal: stay in lockstep with Telegram. No human in the loop for routine updates.
 
 - [ ] **infra: nightly CI job**
-  - `git submodule update --remote telegram-bot-api-spec` → diff `api.json` → if changed, regenerate, run full test suite, open auto-PR.
-  - PR title format: `#<N> feat sync Bot API <version> (<release date>)`.
-  - Reviewer: human (you) for first ~3 months, then auto-merge if all gates green.
+  - `git submodule update --remote telegram-bot-api-spec` for Bot API.
+  - Re-run WebApp scraper for `webapps.json`.
+  - If anything changed: regenerate, `cargo test`, `cargo public-api diff`, open auto-PR.
+  - PR title: `#<N> feat sync Telegram (Bot API <ver> / WebApp <date>)`.
+  - Reviewer: human for the first ~3 months. Auto-merge once we trust the gates.
 - [ ] **infra: golden API surface diff in PR description**
-  - Each auto-PR body includes a structured "what changed in the public API" section using `cargo public-api`. New types, new fields, removed items, renames. Makes review a 30-second skim.
+  - `cargo public-api` produces structured "what changed in the public API" summary. New types, new fields, removed items, renames. PR review becomes a 30-second skim.
 - [ ] **infra: integration smoke test**
-  - Optional: real bot token in CI secrets, deserialize a live response from `getMe`, `getUpdates`, sample of every method's response type. Catches subtle JSON-shape drifts the schema misses.
-- [ ] **infra: cargo-deny + cargo-audit on schedule**
-  - Independent of Telegram changes, weekly run to catch vulnerabilities in deps.
+  - Optional: real bot token in CI secrets, deserialize a live response from a sample of every Bot API method. Catches JSON-shape drifts that the schema misses.
+- [ ] **infra: `cargo-deny + cargo-audit` on schedule**
+  - Weekly run, independent of Telegram changes.
 - [ ] **infra: docs.rs build + dependent-crate smoke check**
-  - On every release, confirm docs.rs builds and known reverse-deps still compile (start with `teloxide-types-shim` from Phase 5).
+  - On each release, confirm `docs.rs` builds and known consumers (`fork-teloxide-types-shim`, `ratma-auth-rs`) still compile against the new version.
 
-Deliverable: nightly auto-PR mechanism; from Telegram release to crates.io publish ≤ 24h.
+Deliverable: nightly auto-PR mechanism. From Telegram release to crates.io publish ≤ 24 h.
 
 ---
 
 ## Phase 5 — Adoption & ecosystem
 
-Goal: make it trivial for existing Rust Telegram crates to use `ratma-tg-types` as their foundation.
+Goal: every RATMA Rust repo runs on `ratma-tg-types`. External adoption is a bonus, not a goal.
+
+### Internal adoption (priority)
 
 - [ ] **feat: `teloxide-types-shim` adapter crate in `RATMA-Studio/fork-teloxide`**
-  - Lives at `crates/teloxide-types-shim/`, depends on `ratma-tg-types-core`.
+  - Lives at `fork-teloxide/crates/teloxide-types-shim/`, depends on `ratma-tg-types-core`.
   - Re-exports under teloxide-native names: `pub use ratma_tg_types_core::MessageEntity` etc.
-  - Where teloxide's idioms diverge (e.g. teloxide has `MessageEntityRef<'a>` with UTF-16↔UTF-8 conversion), the shim provides the converter functions on top of `ratma-tg-types-core` types — keeps teloxide's API stable.
-  - Switch `fork-teloxide` to consume the shim instead of `crates/teloxide-core/src/types/`. Big-bang or progressive (per-type) — TBD in Phase 5 planning.
-- [ ] **docs: migration guide**
-  - `MIGRATION.md` for users of teloxide / frankenstein / rust-tg-bot: how to swap to ratma-tg-types as the type backend.
-- [ ] **outreach: PR to upstream `fmeef/botapi-rs`**
-  - Optional: propose merging the `core/http` split upstream if the maintainer is interested. Maintains good ecosystem citizenship.
-- [ ] **outreach: heads-up issues in `teloxide/teloxide`, `ayrat555/frankenstein`**
-  - Once the crate is stable, file polite "FYI a centralized types crate now exists, here's a migration path" issues. Adoption is their choice; we don't push.
+  - Where teloxide's idioms diverge (`MessageEntityRef<'a>` with UTF-16↔UTF-8 conversion is the canonical example), shim provides converter functions on top of `ratma-tg-types-core` types — keeps teloxide's public API stable across the swap.
+  - Switch `fork-teloxide` to consume the shim instead of `crates/teloxide-core/src/types/`. Progressive: per-type swap, gated by golden-snapshot diff.
+  - **Erases**: most of fork-teloxide's manual types-side techdebt (Default-derives, `#[non_exhaustive]` adds, MediaKind discriminator dispatch, Bot API 10.0 drift fixes, `multipart` wiring) becomes properties of the generator, applied automatically on every regeneration.
+- [ ] **feat: migrate `RATMA-Studio/ratma-auth-rs` off `init_data_rs`**
+  - Replace `init_data_rs::{parse, validate}` calls with `ratma_tg_types_webapp::init_data::{parse, validate}`.
+  - Drop the `init_data_rs` dep from `crates/ratma-auth-rs/Cargo.toml`.
+  - The internal `ResolvedIdentity` mapping (in `src/identity/telegram.rs`) stays as-is — only the type source changes.
+- [ ] **feat: migrate TMA backends**
+  - `ratma-studio-tma`, `rori-shop-tma`, `Roa-Mini-App` backends switch their hand-written WebApp types (if any) to `ratma-tg-types-webapp`.
 
-Deliverable: at least the RATMA fork of teloxide is fully backed by `ratma-tg-types-core`. Other crates have a documented migration path.
+### External (optional)
+
+- [ ] **docs: migration guide**
+  - `MIGRATION.md` for users of `teloxide`, `frankenstein`, `tgbotapi`: how to swap their types backend for `ratma-tg-types`.
+- [ ] **outreach: heads-up issues**
+  - Once 0.1.0 ships and the fork-teloxide shim is live, file polite FYI issues in upstream `teloxide/teloxide` and `ayrat555/frankenstein`. We don't push adoption; we just make the option discoverable.
+- [ ] **outreach: PR to upstream `fmeef/botapi-rs`** *(deferred / discretionary)*
+  - Possibly propose the `core/http` split back upstream. Low priority; upstream maintainer activity unclear.
+
+Deliverable: every Rust repo in `RATMA-Studio` org runs on `ratma-tg-types`. Outside adoption documented but unenforced.
 
 ---
 
@@ -194,37 +249,39 @@ Deliverable: at least the RATMA fork of teloxide is fully backed by `ratma-tg-ty
 Goal: stable 0.1.0 on crates.io.
 
 - [ ] **feat: SemVer policy doc**
-  - Document what is/isn't a breaking change. Telegram adding a variant to an enum → patch (covered by `#[non_exhaustive]` + catch-all). Telegram removing a field → minor (Optional → not present). Telegram renaming a type → major.
+  - Document what is/isn't a breaking change. Telegram adding an enum variant → patch (covered by `#[non_exhaustive]` + `#[serde(other)]`). Telegram removing a field → minor (Optional → not present). Telegram renaming a type → major.
 - [ ] **chore: 0.1.0 release**
-  - Yank-proof tagging: tag commits, attach release notes referencing the Bot API version covered.
+  - Yank-proof tagging: tag commits, attach release notes referencing the Bot API + WebApp versions covered.
 - [ ] **chore: trusted publishing**
-  - Use crates.io OIDC-based publishing from GitHub Actions; no long-lived API tokens.
+  - OIDC-based crates.io publish from GitHub Actions; no long-lived API tokens stored.
 
-Deliverable: `cargo add ratma-tg-types` works, `ratma-tg-types-core` works, both with current Bot API.
+Deliverable: `cargo add ratma-tg-types{,-core,-http,-webapp}` works, current Bot API + WebApp covered, RATMA repos on the new types.
 
 ---
 
 ## Out of scope
 
 - **MTProto / TDLib types.** Different schema universe (TL, not JSON), different abstractions, thousands of types. Use `grammers` for that.
-- **A full bot framework.** This crate is types-first. The `http` client crate is a convenience for current users, not the focus.
-- **Replacing teloxide's dispatcher, handlers, DPTree integration.** Those stay in teloxide.
+- **A full bot framework.** This crate family is types-first. The `http` crate is a convenience for current users of `botapi-rs`, not the focus.
+- **Replacing teloxide's dispatcher, handlers, DPTree integration.** Those stay in `fork-teloxide`.
+- **WebApp JS bindings via `wasm-bindgen`.** Rust types for WebApp init_data + payloads are in scope; wrapping `Telegram.WebApp.expand()` etc. for browser-side use is its own project.
 - **Backporting to old Bot API versions.** We always track HEAD.
 
 ## Open questions
 
-- Do we want a `serde-json-only` minimal variant of `core` (no `serde_json` even, just `serde`)? Probably not — `serde_json` is universally available.
-- Should `core` expose a parser for raw entity arrays back into AST (relevant for inbound-message processing)? Probably yes but lives downstream of `core`, not in it.
-- Codegen language: keep Rust (`tggen`) or consider rewriting in a smaller scripting language for faster iteration? Rust wins — same toolchain as the output.
+- Should `ratma-tg-types-ids` (`UserId`/`ChatId`/etc.) be a separate crate or live in `-core`? Argument for separate: WebApp crate avoids depending on full `-core` if it only needs ids. Argument against: yet another crate. Decision pending Phase 2 design.
+- Codegen language: keep Rust (`tggen`) or rewrite in a scripting language for faster iteration? Rust wins — same toolchain as the output, easier to share types between generator and runtime tests.
+- `serde-json-only` minimal variant of `core` (no `serde_json` even, just `serde`)? Probably not — `serde_json` is universally available and `ordered-float`'s serde impls assume it anyway.
 
 ## Status snapshot
 
 | Phase | Status | Issue |
 |---|---|---|
 | 0 — Fork hygiene | in progress | #1 tracking |
-| 1 — Workspace split | not started | tbd |
+| 1 — Workspace cleanup | structurally done; deps cleanup pending | #3 (closed for structural part), pending follow-ups |
 | 2 — Idiomatic codegen | not started | tbd |
-| 3 — LLM-in-the-loop | not started | tbd |
+| 2½ — WebApp ingestion | not started | tbd |
+| 3 — LLM-in-the-loop | deferred | tbd |
 | 4 — Auto-update infra | not started | tbd |
 | 5 — Adoption | not started | tbd |
 | 6 — Release | not started | tbd |
