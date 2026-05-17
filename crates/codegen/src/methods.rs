@@ -745,13 +745,12 @@ impl<'a> GenerateMethods<'a> {
     fn generate_use(&self) -> TokenStream {
         quote! {
            use anyhow::Result;
-           use reqwest::multipart::Form;
-           use crate::bot::Part;
            use serde::{Deserialize, Serialize};
 
             use crate::{
                 bot::{Bot, Response, ApiError, BotResult},
                 gen_types::*,
+                multipart::{Form, Part},
             };
         }
     }

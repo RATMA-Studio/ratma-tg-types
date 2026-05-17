@@ -1,0 +1,48 @@
+[package]
+name = "ratma-tg-types-http"
+version = "0.0.79"
+edition = "2024"
+rust-version = "1.95"
+authors = ["Alex Ballmer <gnu3ra@riseup.net>", "RATMA Studio"]
+description = "Async HTTP client and method bindings for the Telegram Bot API. Built on ratma-tg-types-core."
+homepage = "https://github.com/RATMA-Studio/ratma-tg-types"
+repository = "https://github.com/RATMA-Studio/ratma-tg-types.git"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0.102"
+async-stream = "0.3.6"
+enum_dispatch = "0.3.13"
+futures-core = { version = "0.3.32", features = ["cfg-target-has-atomic"] }
+futures-util = "0.3.32"
+http-body-util = "0.1.3"
+hyper = { version = "1.9.0", features = ["server", "http2"] }
+hyper-util = { version = "0.1.20", features = ["server", "tokio"] }
+log = "0.4.29"
+ordered-float = { version = "5.3.0", features = ["serde"] }
+ratma-tg-types-core = { path = "../core", version = "0.0.79", features = ["multipart"] }
+rand = "0.10.1"
+reqwest = { version = "0.12.28", features = ["json", "multipart", "stream"] }
+rhai = { version = "1.24.0", optional = true, features = ["internals"] }
+rmp-serde = "1.3.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149", features = ["unbounded_depth"] }
+serde_stacker = "0.1.14"
+serde_urlencoded = "0.7.1"
+tokio = { version = "1.52.3", features = [
+    "net",
+    "socket2",
+    "io-util",
+    "tokio-macros",
+    "macros",
+    "rt-multi-thread"
+] }
+tokio-test = "0.4.5"
+uuid = "1.23.1"
+
+[build-dependencies]
+anyhow = "1.0.102"
+ratma-tg-types-codegen = { path = "../codegen", version = "0.0.79" }
+
+[features]
+rhai = ["dep:rhai", "ratma-tg-types-core/rhai"]

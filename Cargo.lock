@@ -1002,27 +1002,12 @@ name = "ratma-tg-types"
 version = "0.0.79"
 dependencies = [
  "anyhow",
- "async-stream",
- "enum_dispatch",
- "futures-core",
  "futures-util",
- "http-body-util",
- "hyper",
- "hyper-util",
- "log",
- "ordered-float",
- "rand 0.10.1",
- "ratma-tg-types-codegen",
+ "ratma-tg-types-core",
+ "ratma-tg-types-http",
  "reqwest",
- "rhai",
- "rmp-serde",
- "serde",
- "serde_json",
- "serde_stacker",
- "serde_urlencoded",
  "tokio",
  "tokio-test",
- "uuid",
 ]
 
 [[package]]
@@ -1055,6 +1040,35 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_stacker",
+]
+
+[[package]]
+name = "ratma-tg-types-http"
+version = "0.0.79"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "enum_dispatch",
+ "futures-core",
+ "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "ordered-float",
+ "rand 0.10.1",
+ "ratma-tg-types-codegen",
+ "ratma-tg-types-core",
+ "reqwest",
+ "rhai",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "serde_stacker",
+ "serde_urlencoded",
+ "tokio",
+ "tokio-test",
+ "uuid",
 ]
 
 [[package]]
