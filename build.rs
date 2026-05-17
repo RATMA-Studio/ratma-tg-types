@@ -1,8 +1,6 @@
-use std::fs;
+use std::{fs, process::Command, sync::Mutex};
 
 use anyhow::Result;
-use std::process::Command;
-use std::sync::Mutex;
 use ratma_tg_types_codegen::Generate;
 
 fn main() -> Result<()> {
@@ -23,26 +21,11 @@ fn main() -> Result<()> {
 
     fs::write(&methods_path, methods)?;
 
-    match Command::new("rustfmt")
-        .args(["--edition", "2024", &methods_path])
-        .spawn()
-    {
-        Err(_) => {
-            //println!("rustfmt not installed, skipping");
-        }
-        Ok(mut handle) => {
-            handle.wait().unwrap();
-        }
-    }
-
-    match Command::new("rustfmt")
-        .args(["--edition", "2024", &types_path])
-        .spawn()
-    {
-        Err(_) => {
-            //println!("rustfmt not installed, skipping");
-        }
-        Ok(mut handle) => {
+    for path in [&methods_path, &types_path] {
+        if let Ok(mut handle) = Command::new("rustup")
+            .args(["run", "nightly", "rustfmt", "--edition", "2024", path])
+            .spawn()
+        {
             handle.wait().unwrap();
         }
     }

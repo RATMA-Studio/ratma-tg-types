@@ -1,9 +1,9 @@
 use anyhow::Result;
+use futures_util::stream::StreamExt;
 use ratma_tg_types::{
     bot::BotBuilder,
-    ext::{BotUrl, Webhook},
+    ext::{BotUrl, Webhook}
 };
-use futures_util::stream::StreamExt;
 
 #[tokio::main]
 async fn main() -> Result<()> {

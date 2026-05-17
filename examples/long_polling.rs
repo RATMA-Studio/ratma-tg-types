@@ -1,6 +1,6 @@
 use anyhow::Result;
-use ratma_tg_types::{bot::BotBuilder, ext::LongPoller};
 use futures_util::stream::StreamExt;
+use ratma_tg_types::{bot::BotBuilder, ext::LongPoller};
 
 #[tokio::main]
 async fn main() -> Result<()> {
