@@ -2,7 +2,7 @@
 name = "ratma-tg-types-codegen"
 version = "0.0.79"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.95"
 authors = ["Alex Ballmer <gnu3ra@riseup.net>", "RATMA Studio"]
 description = "Code generator (build-dep) for ratma-tg-types. Reads the Telegram Bot API spec JSON and emits Rust types and method bindings."
 homepage = "https://github.com/RATMA-Studio/ratma-tg-types"
