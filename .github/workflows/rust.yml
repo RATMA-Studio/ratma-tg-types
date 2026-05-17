@@ -1,26 +1,117 @@
-name: Rust
+name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+  RUST_BACKTRACE: short
+
+  # Nightly is needed only for `rustfmt` (our `rustfmt.toml` uses unstable
+  # features: `imports_granularity`, `group_imports`,
+  # `struct_field_align_threshold`, `wrap_comments`, …). All other jobs run
+  # on stable.
+  rust_nightly: nightly-2026-05-15
+
+  # Matches `rust-version = "1.95"` in every `Cargo.toml` of the workspace.
+  rust_msrv: 1.95.0
 
 jobs:
-  build:
-
+  # Aggregate gate the merge button waits on. If you add a new job, list it
+  # under `needs:` so a green tick reflects the full matrix.
+  ci-pass:
+    name: CI succeeded
     runs-on: ubuntu-latest
-
+    if: always()
+    needs:
+      - fmt
+      - clippy
+      - test
+      - doc
+      - audit
     steps:
-    - uses: actions/checkout@v3
-      with:
-        submodules: recursive
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
-    - name: Doc tests
-      run: cargo test --doc
+      - uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
+
+  fmt:
+    name: fmt (nightly)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.rust_nightly }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy (stable)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets
+
+  test:
+    name: test (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, "1.95.0"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --verbose
+      - run: cargo test --workspace --verbose
+      - run: cargo test --workspace --doc
+
+  doc:
+    name: docs
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-Dwarnings"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --workspace --no-deps
+
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    # Non-blocking on existing PRs (an advisory landing mid-flight shouldn't
+    # block a merge), but flagged so we can react.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install --locked cargo-audit
+      - run: cargo audit
