@@ -171,15 +171,15 @@ impl Webhook {
         let svc = service_fn(move |body: Request<Incoming>| {
             let tx = tx.clone();
             async move {
-                if let Some(token) = body.headers().get("X-Telegram-Bot-Api-Secret-Token") {
-                    if token.to_str().unwrap_or("") == cookie.to_string().as_str() {
-                        let body = Limited::new(body, 1024 * 1024 * 10);
-                        let body = body.collect().await.map_err(|e| anyhow!(e))?.aggregate();
-                        if let Ok(update) = serde_json::from_reader::<_, Update>(body.reader()) {
-                            tx.send(update.into())
-                                .await
-                                .map_err(|e: SendError<UpdateExt>| anyhow!(e))?;
-                        }
+                if let Some(token) = body.headers().get("X-Telegram-Bot-Api-Secret-Token")
+                    && token.to_str().unwrap_or("") == cookie.to_string().as_str()
+                {
+                    let body = Limited::new(body, 1024 * 1024 * 10);
+                    let body = body.collect().await.map_err(|e| anyhow!(e))?.aggregate();
+                    if let Ok(update) = serde_json::from_reader::<_, Update>(body.reader()) {
+                        tx.send(update.into())
+                            .await
+                            .map_err(|e: SendError<UpdateExt>| anyhow!(e))?;
                     }
                 }
                 Ok::<_, ApiError>(

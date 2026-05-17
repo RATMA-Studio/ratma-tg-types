@@ -34,11 +34,11 @@ impl Response {
     /// If this response as a retry_after parameter, async wait this many
     /// seconds returns true if a retry is required
     pub async fn wait(&self) -> bool {
-        if let Some(ref params) = self.parameters {
-            if let Some(retry) = params.get_retry_after() {
-                tokio::time::sleep(Duration::from_secs(retry as u64)).await;
-                return true;
-            }
+        if let Some(ref params) = self.parameters
+            && let Some(retry) = params.get_retry_after()
+        {
+            tokio::time::sleep(Duration::from_secs(retry as u64)).await;
+            return true;
         }
         false
     }
