@@ -1,16 +1,21 @@
-use crate::{schema::Type, MultiTypes, ARRAY_OF, INPUT_FILE, UPDATE};
-use anyhow::{anyhow, Ok, Result};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashSet},
+    sync::Arc
+};
+
+use anyhow::{Ok, Result, anyhow};
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use quote::{format_ident, quote, ToTokens, __private::TokenStream};
-
-use crate::naming::*;
-use crate::schema::{Field, Spec};
-use crate::util::*;
+use quote::{__private::TokenStream, ToTokens, format_ident, quote};
 use regex::Regex;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::sync::Arc;
+
+use crate::{
+    ARRAY_OF, INPUT_FILE, MultiTypes, UPDATE,
+    naming::*,
+    schema::{Field, Spec, Type},
+    util::*
+};
 
 lazy_static! {
     static ref REGEX_STATUS: Regex = Regex::new(r#""[a-z]+""#).unwrap();
@@ -18,17 +23,17 @@ lazy_static! {
 
 /// Generator for the "types" source file
 pub(crate) struct GenerateTypes<'a> {
-    spec: Arc<Spec>,
-    multitypes: MultiTypes,
-    choose_type: ChooseType<'a>,
+    spec:        Arc<Spec>,
+    multitypes:  MultiTypes,
+    choose_type: ChooseType<'a>
 }
 
 impl<'a> GenerateTypes<'a> {
     /// Instantiate a new GenerateTypes using api spec and enum type mapping
     pub(crate) fn new(spec: Arc<Spec>, multitypes: MultiTypes) -> Self {
         Self {
-            spec: Arc::clone(&spec),
-            multitypes: multitypes.clone(),
+            spec:        Arc::clone(&spec),
+            multitypes:  multitypes.clone(),
             choose_type: ChooseType::new(spec, |opts| {
                 let types = opts.types;
                 let is_media = opts.is_media;
@@ -46,7 +51,7 @@ impl<'a> GenerateTypes<'a> {
                 } else {
                     mytype[ARRAY_OF.len() * nested..].to_owned()
                 }
-            }),
+            })
         }
     }
 
@@ -106,7 +111,12 @@ impl<'a> GenerateTypes<'a> {
                     .collect::<BTreeMap<&str, &str>>();
                 let e = if !statuses.is_empty() {
                     let skip = self
-                        .generate_enum_internally_tagged(statuses.clone(), &v.name, "status", false)
+                        .generate_enum_internally_tagged(
+                            statuses.clone(),
+                            &v.name,
+                            "status",
+                            false
+                        )
                         .unwrap();
                     let noskip = self
                         .generate_enum_internally_tagged(statuses, &v.name, "status", true)
@@ -341,7 +351,7 @@ impl<'a> GenerateTypes<'a> {
     fn get_field_names_ext<'b>(
         &'b self,
         t: &'b Type,
-        unbox: bool,
+        unbox: bool
     ) -> impl Iterator<Item = TokenStream> + 'b {
         t.pretty_fields()
             .filter(|f| f.name != "update_id")
@@ -375,7 +385,8 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    /// Generates enum for special type that is either a chat id or chat username
+    /// Generates enum for special type that is either a chat id or chat
+    /// username
     fn generate_chat_enum(&self) -> TokenStream {
         quote! {
             #[derive(Serialize, Deserialize, Hash, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -434,7 +445,7 @@ impl<'a> GenerateTypes<'a> {
                             Some(t),
                             &field.name,
                             false,
-                            false,
+                            false
                         )
                         .unwrap();
 
@@ -798,8 +809,9 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    /// Generate special method for generating multipart/form-data for uploaded files. This is only
-    /// generated on "InputFile" which has special treatment in telegram api
+    /// Generate special method for generating multipart/form-data for uploaded
+    /// files. This is only generated on "InputFile" which has special
+    /// treatment in telegram api
     fn generate_inputfile_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.name == INPUT_FILE {
             let q = quote! {
@@ -822,7 +834,8 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    /// If a type is a subtype of InputMedia generate multipart/form-data handler method as well
+    /// If a type is a subtype of InputMedia generate multipart/form-data
+    /// handler method as well
     fn generate_inputmedia_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.is_media() {
             let q = quote! {
@@ -872,24 +885,25 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    /// If we can't chose a specific type when a field has multiple types, generate an enum with
-    /// all types
+    /// If we can't chose a specific type when a field has multiple types,
+    /// generate an enum with all types
     fn generate_multitype_enums(&self) -> Result<TokenStream> {
         let mut tokens = quote!();
 
         for jsontype in self.spec.types.values() {
             if let Some(fields) = jsontype.fields.as_ref() {
                 for field in fields {
-                    if field.types.len() > 1 && !is_inputfile(field) {
-                        if let Some(name) = self.get_multitype_name(field) {
-                            let t = self.generate_enum_str(&field.types, &name, true)?;
-                            tokens.extend(t);
+                    if field.types.len() > 1
+                        && !is_inputfile(field)
+                        && let Some(name) = self.get_multitype_name(field)
+                    {
+                        let t = self.generate_enum_str(&field.types, &name, true)?;
+                        tokens.extend(t);
 
-                            if !is_json(field) {
-                                let typeiter = field.types.iter().map(get_type_name_str);
-                                let t = generate_fmt_display_enum(&name, typeiter);
-                                tokens.extend(t);
-                            }
+                        if !is_json(field) {
+                            let typeiter = field.types.iter().map(get_type_name_str);
+                            let t = generate_fmt_display_enum(&name, typeiter);
+                            tokens.extend(t);
                         }
                     }
                 }
@@ -899,16 +913,17 @@ impl<'a> GenerateTypes<'a> {
         for method in self.spec.methods.values() {
             if let Some(fields) = method.fields.as_ref() {
                 for field in fields {
-                    if field.types.len() > 1 && !is_inputfile(field) {
-                        if let Some(name) = self.get_multitype_name(field) {
-                            let t = self.generate_enum_str(&field.types, &name, true)?;
-                            tokens.extend(t);
+                    if field.types.len() > 1
+                        && !is_inputfile(field)
+                        && let Some(name) = self.get_multitype_name(field)
+                    {
+                        let t = self.generate_enum_str(&field.types, &name, true)?;
+                        tokens.extend(t);
 
-                            if !is_json(field) {
-                                let typeiter = field.types.iter().map(get_type_name_str);
-                                let t = generate_fmt_display_enum(&name, typeiter);
-                                tokens.extend(t);
-                            }
+                        if !is_json(field) {
+                            let typeiter = field.types.iter().map(get_type_name_str);
+                            let t = generate_fmt_display_enum(&name, typeiter);
+                            tokens.extend(t);
                         }
                     }
                 }
@@ -1024,8 +1039,8 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    /// Helper method for generating a name for a multitype enum while storing it in the mapping
-    /// for later use by methods generator
+    /// Helper method for generating a name for a multitype enum while storing
+    /// it in the mapping for later use by methods generator
     fn get_multitype_name(&self, field_name: &Field) -> Option<String> {
         let mut multitypes = self
             .multitypes
@@ -1054,7 +1069,7 @@ impl<'a> GenerateTypes<'a> {
         types: BTreeMap<&str, &str>,
         name: &str,
         tag: &str,
-        noskip: bool,
+        noskip: bool
     ) -> Result<TokenStream> {
         let subtypes = self.spec.get_type(name);
         let skip_name = format_ident!("{}", name);
@@ -1263,7 +1278,7 @@ impl<'a> GenerateTypes<'a> {
     fn generate_enum_str<N, I>(&self, types: &[I], name: &N, skip: bool) -> Result<TokenStream>
     where
         N: AsRef<str>,
-        I: AsRef<str>,
+        I: AsRef<str>
     {
         let subtypes = self.spec.get_type(name.as_ref());
         let skip_name = format_ident!("{}", name.as_ref());
@@ -1679,8 +1694,8 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    /// For the "InputFile" type genenerate helpers for working with uploaded files and file
-    /// references.
+    /// For the "InputFile" type genenerate helpers for working with uploaded
+    /// files and file references.
     fn generate_inputfile_enum(&self) -> TokenStream {
         let input_file = format_ident!("{}", INPUT_FILE);
         quote! {
@@ -1881,7 +1896,7 @@ impl<'a> GenerateTypes<'a> {
     /// For subtypes, generate traits and trait bounds to allow generics to work
     fn generate_trait_impl<T>(&self, traitname: &T) -> Result<TokenStream>
     where
-        T: AsRef<str>,
+        T: AsRef<str>
     {
         let spec = self.spec.clone();
         let supertype = spec
@@ -1902,7 +1917,7 @@ impl<'a> GenerateTypes<'a> {
 
     fn generate_constructor<T>(&self, typename: T) -> Result<TokenStream>
     where
-        T: AsRef<str>,
+        T: AsRef<str>
     {
         let t = self
             .spec
@@ -1934,7 +1949,7 @@ impl<'a> GenerateTypes<'a> {
                             &v.name,
                             !v.required,
                             true,
-                            false,
+                            false
                         )
                         .unwrap();
                     if should_wrap(&v.types) {
@@ -1989,9 +2004,9 @@ impl<'a> GenerateTypes<'a> {
                                     }
                                 }
                             }
-                        },
+                        }
                     )
-                },
+                }
             );
             let fieldnames_i = t
                 .pretty_fields()
@@ -2032,7 +2047,7 @@ impl<'a> GenerateTypes<'a> {
                       #c  tg_type: #v
                     }
                 }
-                _ => quote!(),
+                _ => quote!()
             };
             let fieldtypes = fieldtypes.into_iter().flatten().collect_vec();
             let g = if !fieldtypes.is_empty() {
@@ -2309,8 +2324,8 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    // fn generate_into_tuple(&self, t: &Type, is_trait: bool, public: bool) -> TokenStream {
-    //     let tuple_create = t.pretty_fields().map(|f| {
+    // fn generate_into_tuple(&self, t: &Type, is_trait: bool, public: bool) ->
+    // TokenStream {     let tuple_create = t.pretty_fields().map(|f| {
     //         let fieldname = get_field_name(f);
     //         let boxed = self.spec.check_parent(t, &f.types);
     //         let fieldname = format_ident!("{}", fieldname);
@@ -2345,8 +2360,8 @@ impl<'a> GenerateTypes<'a> {
     //     let tu = pf.iter().map(|f| {
     //         let unbox = &self
     //             .choose_type
-    //             .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, true)
-    //             .unwrap();
+    //             .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false,
+    // true)             .unwrap();
     //         if f.required {
     //             quote! { #unbox }
     //         } else {
@@ -2369,8 +2384,8 @@ impl<'a> GenerateTypes<'a> {
 
     //     let doctypes = pf.iter().map(|f| f.name.as_str()).join(", ");
     //     let comment = format!(
-    //         "Consumes and deconstructs this type into a tuple with one element per field.
-    //         Tuple type returned is: ({})",
+    //         "Consumes and deconstructs this type into a tuple with one element
+    // per field.         Tuple type returned is: ({})",
     //         doctypes
     //     )
     //     .comment();
@@ -2515,7 +2530,7 @@ impl<'a> GenerateTypes<'a> {
     /// Generate an impl with getters to allow type erasure
     fn generate_impl<T>(&self, name: &'a T, complete: &mut BTreeSet<String>) -> Result<TokenStream>
     where
-        T: AsRef<str> + 'a,
+        T: AsRef<str> + 'a
     {
         let t = self
             .spec
@@ -2666,7 +2681,8 @@ impl<'a> GenerateTypes<'a> {
                 let test_name_serde =
                     format_ident!("json_serialize_{}", t.name.to_case(Case::Snake));
 
-                let test_debug_noskip = format_ident!("json_debug_{}", t.name.to_case(Case::Snake));
+                let test_debug_noskip =
+                    format_ident!("json_debug_{}", t.name.to_case(Case::Snake));
 
                 quote! {
                     #[test]
@@ -2726,7 +2742,7 @@ impl<'a> GenerateTypes<'a> {
     /// Generate a struct based on a type name from the api spec
     fn generate_struct<T>(&self, type_name: T, name: T, serde_skip: bool) -> Result<TokenStream>
     where
-        T: AsRef<str>,
+        T: AsRef<str>
     {
         let t = self
             .spec
@@ -2765,7 +2781,7 @@ impl<'a> GenerateTypes<'a> {
                             Some(t),
                             &v.name,
                             !v.required,
-                            false,
+                            false
                         )
                         .ok()
                 })
@@ -2784,7 +2800,7 @@ impl<'a> GenerateTypes<'a> {
                                 &v.name,
                                 !v.required,
                                 false,
-                                !serde_skip,
+                                !serde_skip
                             )
                             .ok()
                     } else {
@@ -2795,7 +2811,7 @@ impl<'a> GenerateTypes<'a> {
                                 &v.name,
                                 !v.required,
                                 false,
-                                false,
+                                false
                             )
                             .ok()
                     }
@@ -2843,11 +2859,19 @@ impl<'a> GenerateTypes<'a> {
 
 #[cfg(test)]
 mod test {
+    use std::{
+        collections::HashMap,
+        sync::{Arc, RwLock}
+    };
+
     use super::*;
-    use std::sync::{Arc, RwLock};
     #[test]
     fn common_methods() {
-        let json = std::fs::read_to_string("../telegram-bot-api-spec/api.json").unwrap();
+        let json = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../telegram-bot-api-spec/api.json"
+        ))
+        .unwrap();
         let spec: Spec = serde_json::from_str(&json).unwrap();
         let spec = Arc::new(spec);
         let t = spec.get_type("ChatMember").unwrap();

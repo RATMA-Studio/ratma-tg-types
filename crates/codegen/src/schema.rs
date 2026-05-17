@@ -1,24 +1,26 @@
-use std::collections::BTreeSet;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::sync::RwLock;
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    sync::RwLock
+};
 
-use anyhow::anyhow;
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
 
-use crate::util::is_primative;
-use crate::util::type_without_array;
+use crate::util::{is_primative, type_without_array};
 
 #[cfg(test)]
 mod tests {
-    use super::{ApxFeedbackArcSet, Spec, Type};
     use std::collections::BTreeSet;
+
+    use super::{ApxFeedbackArcSet, Spec, Type};
 
     #[test]
     fn run_to_completion() {
-        let json = std::fs::read_to_string("../telegram-bot-api-spec/api.json").unwrap();
+        let json = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../telegram-bot-api-spec/api.json"
+        ))
+        .unwrap();
         let spec: Spec = serde_json::from_str(&json).unwrap();
         let mut f = ApxFeedbackArcSet::new(&spec);
         let size = f.run().unwrap().len();
@@ -39,7 +41,7 @@ fn all_vertex_sets<'a>(
     size: usize,
     dataindex: usize,
     data: &mut Vec<&'a Type>,
-    out: &mut Vec<Vec<&'a Type>>,
+    out: &mut Vec<Vec<&'a Type>>
 ) {
     if dataindex == size {
         out.push(data.clone());
@@ -53,7 +55,7 @@ fn all_vertex_sets<'a>(
     match dataindex {
         v if v == data.len() => data.push(sets[setindex]),
         _ if dataindex > data.len() => panic!("overflow"),
-        _ => data[dataindex] = sets[setindex],
+        _ => data[dataindex] = sets[setindex]
     }
 
     all_vertex_sets(sets, setindex + 1, size, dataindex + 1, data, out);
@@ -65,7 +67,7 @@ fn iter_subtypes<'a>(
     spec: &'a Spec,
     parent: &'a Type,
     t: &'a Type,
-    visited: &mut BTreeSet<(&'a Type, &'a Type)>,
+    visited: &mut BTreeSet<(&'a Type, &'a Type)>
 ) {
     if let Some(st) = t.subtypes.as_deref() {
         for st in st {
@@ -83,51 +85,50 @@ fn iter_subtypes<'a>(
 
 /// Convert a spec's types into an iterator over edges in the type digraph
 fn edges_iter(spec: &Spec) -> impl Iterator<Item = (&'_ Type, &'_ Type)> {
-    spec.iter_types()
-        .map(move |t| {
-            let mut visited = BTreeSet::new();
-            iter_subtypes(spec, t, t, &mut visited);
+    spec.iter_types().flat_map(move |t| {
+        let mut visited = BTreeSet::new();
+        iter_subtypes(spec, t, t, &mut visited);
 
-            let fields = t
-                .fields
-                .as_deref()
-                .unwrap_or(&[])
-                .into_iter()
-                .flat_map(move |field| {
-                    field
-                        .types
-                        .iter()
-                        .filter_map(|t2| spec.get_type(t2))
-                        .map(move |t2| (t, t2))
-                });
+        let fields = t
+            .fields
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .flat_map(move |field| {
+                field
+                    .types
+                    .iter()
+                    .filter_map(|t2| spec.get_type(t2))
+                    .map(move |t2| (t, t2))
+            });
 
-            fields.chain(visited)
-        })
-        .flatten()
+        fields.chain(visited)
+    })
 }
 
-/// Failed attempt at a dynamic programming based exact solution to minimum feedback arc set
-/// This runs in exponential time + exponential space, which is unusable with the size of
-/// telegram's type set. This is just kept around because its cool. Its unused
+/// Failed attempt at a dynamic programming based exact solution to minimum
+/// feedback arc set This runs in exponential time + exponential space, which is
+/// unusable with the size of telegram's type set. This is just kept around
+/// because its cool. Its unused
 #[allow(dead_code)]
 struct FeedbackArcSet<'a> {
-    memo: HashMap<BTreeSet<&'a Type>, usize>,
-    edges: BTreeSet<(&'a Type, &'a Type)>,
-    vertices: BTreeSet<&'a Type>,
+    memo:     HashMap<BTreeSet<&'a Type>, usize>,
+    edges:    BTreeSet<(&'a Type, &'a Type)>,
+    vertices: BTreeSet<&'a Type>
 }
 
 /// Approximation for minimum feedback arc set that runs in polynomial time.
 /// pirated from SortFAS in http://www.vldb.org/pvldb/vol10/p133-simpson.pdf
 pub(crate) struct ApxFeedbackArcSet<'a> {
-    edges: BTreeSet<(&'a Type, &'a Type)>,
-    vertices: Vec<&'a Type>,
+    edges:    BTreeSet<(&'a Type, &'a Type)>,
+    vertices: Vec<&'a Type>
 }
 
 impl<'a> ApxFeedbackArcSet<'a> {
     /// Construct a FeedbackArcSet solver from a spec reference
     pub(crate) fn new(spec: &'a Spec) -> Self {
         Self {
-            edges: edges_iter(spec)
+            edges:    edges_iter(spec)
                 .map(|(t, e)| if t.name == "Update" { (e, e) } else { (t, e) })
                 .collect::<BTreeSet<(&Type, &Type)>>(),
             vertices: spec
@@ -135,7 +136,7 @@ impl<'a> ApxFeedbackArcSet<'a> {
                 .collect::<BTreeSet<&Type>>()
                 .iter()
                 .copied()
-                .collect::<Vec<&Type>>(),
+                .collect::<Vec<&Type>>()
         }
     }
 
@@ -202,9 +203,9 @@ impl<'a> ApxFeedbackArcSet<'a> {
 impl<'a> FeedbackArcSet<'a> {
     fn new(spec: &'a Spec) -> Self {
         Self {
-            memo: HashMap::new(),
-            edges: edges_iter(spec).collect::<BTreeSet<(&Type, &Type)>>(),
-            vertices: spec.iter_types().collect::<BTreeSet<&Type>>(),
+            memo:     HashMap::new(),
+            edges:    edges_iter(spec).collect::<BTreeSet<(&Type, &Type)>>(),
+            vertices: spec.iter_types().collect::<BTreeSet<&Type>>()
         }
     }
 
@@ -265,47 +266,47 @@ impl<'a> FeedbackArcSet<'a> {
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub(crate) struct Spec {
-    pub(crate) types: HashMap<String, Type>,
+    pub(crate) types:   HashMap<String, Type>,
     pub(crate) methods: HashMap<String, Method>,
     #[serde(default)]
-    boxed: RwLock<HashSet<String>>,
+    boxed:              RwLock<HashSet<String>>,
     #[serde(default)]
-    min: usize,
+    min:                usize
 }
 
 /// Serde representation of a json method spec
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Method {
-    pub(crate) name: String,
-    pub(crate) href: String,
+    pub(crate) name:        String,
+    pub(crate) href:        String,
     #[serde(default)]
     pub(crate) description: Vec<String>,
-    pub(crate) returns: Vec<String>,
-    pub(crate) fields: Option<Vec<Field>>,
+    pub(crate) returns:     Vec<String>,
+    pub(crate) fields:      Option<Vec<Field>>
 }
 
 /// Serde representation of a json type spec
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Type {
-    pub(crate) name: String,
-    pub(crate) href: String,
+    pub(crate) name:        String,
+    pub(crate) href:        String,
     #[serde(default)]
     pub(crate) description: Vec<String>,
-    pub(crate) fields: Option<Vec<Field>>,
-    pub(crate) subtypes: Option<Vec<String>>,
-    pub(crate) subtype_of: Option<Vec<String>>,
+    pub(crate) fields:      Option<Vec<Field>>,
+    pub(crate) subtypes:    Option<Vec<String>>,
+    pub(crate) subtype_of:  Option<Vec<String>>
 }
 
 /// Serde representation of a json field spec
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Field {
-    pub(crate) name: String,
-    pub(crate) types: Vec<String>,
-    pub(crate) required: bool,
-    pub(crate) description: Option<String>,
+    pub(crate) name:        String,
+    pub(crate) types:       Vec<String>,
+    pub(crate) required:    bool,
+    pub(crate) description: Option<String>
 }
 
 impl Type {
@@ -352,12 +353,12 @@ impl Spec {
         self.types.get(name)?.subtypes.as_deref()
     }
 
-    /// Get all subtypes of a type by name, None if the type is nonexistent, Err if the type
-    /// contains nonexistent subtypes
+    /// Get all subtypes of a type by name, None if the type is nonexistent, Err
+    /// if the type contains nonexistent subtypes
     pub(crate) fn get_subtypes<T: AsRef<str>>(&self, name: T) -> Result<Option<Vec<&Type>>> {
         let subtypes = match self.get_subtypes_inner(name.as_ref()) {
             Some(x) => x,
-            None => return Ok(None),
+            None => return Ok(None)
         };
 
         let mut types = Vec::new();
@@ -389,8 +390,8 @@ impl Spec {
         }
     }
 
-    /// Get a list of a type's subtypes, None if the type is nonexistent, Err if any of the
-    /// subtypes are nonexistent
+    /// Get a list of a type's subtypes, None if the type is nonexistent, Err if
+    /// any of the subtypes are nonexistent
     fn get_subtype_of<T: AsRef<str>>(&self, name: T) -> Result<Option<Vec<&'_ Type>>> {
         let res = self.types.get(name.as_ref()).and_then(|t| {
             t.subtype_of.as_ref().map(|s| {
@@ -444,7 +445,7 @@ impl Spec {
             .iter()
             .filter_map(|v| self.get_type(v))
             .filter_map(|v| v.subtypes.as_deref())
-            .flat_map(|v| v.into_iter())
+            .flat_map(|v| v.iter())
             .filter_map(|v| self.get_type(v))
             .filter(|p| p.name != parent.name)
             .any(|v| self.minicheck(v, name))

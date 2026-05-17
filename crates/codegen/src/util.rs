@@ -1,8 +1,13 @@
-use crate::schema::{Field, Spec, Type};
-use crate::{naming::get_type_name_str, ARRAY_OF, INPUT_FILE, MULTITYPE_ENUM_PREFIX};
-use anyhow::Result;
-use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use std::sync::Arc;
+
+use anyhow::Result;
+use quote::{__private::TokenStream, ToTokens, format_ident, quote};
+
+use crate::{
+    ARRAY_OF, INPUT_FILE, MULTITYPE_ENUM_PREFIX,
+    naming::get_type_name_str,
+    schema::{Field, Spec, Type}
+};
 
 pub(crate) trait ChooserFn {
     fn cb(&self, types: &TypeChooserOpts<'_, '_>) -> String;
@@ -25,7 +30,7 @@ pub(crate) fn should_register(t: &Type) -> bool {
 
 impl<F> ChooserFn for F
 where
-    F: for<'a, 'b, 'c> Fn(&'a TypeChooserOpts<'b, 'c>) -> String,
+    F: for<'a, 'b, 'c> Fn(&'a TypeChooserOpts<'b, 'c>) -> String
 {
     fn cb(&self, types: &TypeChooserOpts<'_, '_>) -> String {
         self(types)
@@ -52,7 +57,7 @@ pub(crate) fn field_iter<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item =
 where
     F: FnMut(&'a Field) -> R,
     F: 'a,
-    R: 'a,
+    R: 'a
 {
     t.fields
         .iter()
@@ -63,7 +68,7 @@ where
 
 pub(crate) fn get_multitype_name_types<T>(name: &T, types: &[String]) -> String
 where
-    T: AsRef<str>,
+    T: AsRef<str>
 {
     if is_inputfile_types(types) {
         INPUT_FILE.to_owned()
@@ -84,20 +89,22 @@ pub(crate) fn get_multitype_name(fieldname: &Field) -> String {
     }
 }
 
-/// Check if a json spec type name is an "array" and return the offset of the actual type name
+/// Check if a json spec type name is an "array" and return the offset of the
+/// actual type name
 pub(crate) fn is_array<T>(name: T) -> usize
 where
-    T: AsRef<str>,
+    T: AsRef<str>
 {
     name.as_ref().matches(ARRAY_OF).count()
 }
 
-/// Helper function to generate a std::fmt::Display implementation for multiple types
+/// Helper function to generate a std::fmt::Display implementation for multiple
+/// types
 pub(crate) fn generate_fmt_display_enum<'a, T, V, U>(name: &T, types: V) -> TokenStream
 where
     T: AsRef<str>,
     V: Iterator<Item = U>,
-    U: AsRef<str> + 'a,
+    U: AsRef<str> + 'a
 {
     let name = format_ident!("{}", name.as_ref());
     let types = types.map(|v| {
@@ -127,7 +134,7 @@ where
 /// Take a type name and return a slice without a leading "Array of.*"
 pub(crate) fn type_without_array<T>(t: &T) -> &'_ str
 where
-    T: AsRef<str>,
+    T: AsRef<str>
 {
     let nested = is_array(t);
     if nested > 0 {
@@ -142,8 +149,8 @@ pub(crate) fn is_special_type(val: &str) -> bool {
     val == "BackgroundType" || val == "StoryAreaType" || val == "ReactionType"
 }
 
-/// Hacky workaround to break our dependency on multitype enums for now while serde_urlencoded
-/// fixes outstanding issues with untagged enums
+/// Hacky workaround to break our dependency on multitype enums for now while
+/// serde_urlencoded fixes outstanding issues with untagged enums
 pub(crate) fn is_chatid(types: &[String]) -> bool {
     types.len() == 2
         && types.contains(&"String".to_owned())
@@ -151,25 +158,28 @@ pub(crate) fn is_chatid(types: &[String]) -> bool {
 }
 
 pub(crate) struct TypeChooserOpts<'a, 'b> {
-    pub(crate) types: &'a [String],
+    pub(crate) types:    &'a [String],
     pub(crate) is_media: bool,
-    pub(crate) nested: usize,
-    pub(crate) name: &'b str,
+    pub(crate) nested:   usize,
+    pub(crate) name:     &'b str
 }
 
 pub(crate) struct ChooseType<'a> {
-    spec: Arc<Spec>,
-    type_chooser: Box<dyn ChooserFn + 'a>,
+    spec:         Arc<Spec>,
+    type_chooser: Box<dyn ChooserFn + 'a>
 }
 
 impl<'a> ChooseType<'a> {
     pub(crate) fn new<U>(spec: Arc<Spec>, type_chooser: U) -> Self
     where
         U: for<'d, 'b, 'c> Fn(&'d TypeChooserOpts<'b, 'c>) -> String + 'a,
-        U: 'a,
+        U: 'a
     {
         let type_chooser = Box::new(type_chooser);
-        Self { spec, type_chooser }
+        Self {
+            spec,
+            type_chooser
+        }
     }
 
     pub(crate) fn choose_type<T>(
@@ -179,10 +189,10 @@ impl<'a> ChooseType<'a> {
         name: &T,
         optional: bool,
         no_wrap: bool,
-        noskip: bool,
+        noskip: bool
     ) -> Result<TokenStream>
     where
-        T: AsRef<str>,
+        T: AsRef<str>
     {
         self.choose_type_private(
             types,
@@ -194,7 +204,7 @@ impl<'a> ChooseType<'a> {
             false,
             no_wrap,
             false,
-            noskip,
+            noskip
         )
     }
 
@@ -204,10 +214,10 @@ impl<'a> ChooseType<'a> {
         parent: Option<&Type>,
         name: &T,
         optional: bool,
-        owned: bool,
+        owned: bool
     ) -> Result<TokenStream>
     where
-        T: AsRef<str>,
+        T: AsRef<str>
     {
         self.choose_type_private(
             types,
@@ -219,7 +229,7 @@ impl<'a> ChooseType<'a> {
             owned,
             true,
             false,
-            false,
+            false
         )
     }
 
@@ -229,10 +239,10 @@ impl<'a> ChooseType<'a> {
         parent: Option<&Type>,
         name: &T,
         optional: bool,
-        owned: bool,
+        owned: bool
     ) -> Result<TokenStream>
     where
-        T: AsRef<str>,
+        T: AsRef<str>
     {
         self.choose_type_private(
             types,
@@ -244,7 +254,7 @@ impl<'a> ChooseType<'a> {
             owned,
             false,
             true,
-            false,
+            false
         )
     }
 
@@ -254,10 +264,10 @@ impl<'a> ChooseType<'a> {
         parent: Option<&Type>,
         name: &T,
         optional: bool,
-        owned: bool,
+        owned: bool
     ) -> Result<TokenStream>
     where
-        T: AsRef<str>,
+        T: AsRef<str>
     {
         self.choose_type_private(
             types,
@@ -269,7 +279,7 @@ impl<'a> ChooseType<'a> {
             owned,
             true,
             false,
-            false,
+            false
         )
     }
 
@@ -279,11 +289,11 @@ impl<'a> ChooseType<'a> {
         parent: Option<&Type>,
         name: &T,
         optional: bool,
-        lifetime: F,
+        lifetime: F
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
-        F: FnOnce() -> TokenStream,
+        F: FnOnce() -> TokenStream
     {
         self.choose_type_private(
             types,
@@ -295,13 +305,14 @@ impl<'a> ChooseType<'a> {
             false,
             true,
             false,
-            false,
+            false
         )
     }
 
-    /// Generate the type for a specific field, depending if we have an array type,
-    /// a api type that needs to be mapped to a native type, or a choice of types that
-    /// should be either narrowed down to owe or turned into an enum type
+    /// Generate the type for a specific field, depending if we have an array
+    /// type, a api type that needs to be mapped to a native type, or a
+    /// choice of types that should be either narrowed down to owe or turned
+    /// into an enum type
     #[allow(clippy::too_many_arguments)]
     fn choose_type_private<T, F>(
         &self,
@@ -314,11 +325,11 @@ impl<'a> ChooseType<'a> {
         owned: bool,
         no_wrap: bool,
         mut force_box: bool,
-        noskip: bool,
+        noskip: bool
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
-        F: FnOnce() -> TokenStream,
+        F: FnOnce() -> TokenStream
     {
         let is_media = parent.map(|t| t.is_media()).unwrap_or(false);
         let nested = is_array(&types[0]);
@@ -331,7 +342,7 @@ impl<'a> ChooseType<'a> {
             types,
             is_media,
             nested,
-            name: name.as_ref(),
+            name: name.as_ref()
         };
 
         let checked = if let Some(parent) = parent {
@@ -439,7 +450,7 @@ impl<'a> ChooseType<'a> {
 /// Conditionally generate an Option<T> out of a field
 pub(crate) fn is_optional<T>(field: &Field, tokenstram: T) -> TokenStream
 where
-    T: ToTokens,
+    T: ToTokens
 {
     if !field.required {
         quote! {
@@ -489,13 +500,13 @@ pub(crate) fn is_json(field: &Field) -> bool {
 /// Returns true if a REST type is primative (does not map to a serde type)
 pub(crate) fn is_primative<T>(field: &[T]) -> bool
 where
-    T: AsRef<str>,
+    T: AsRef<str>
 {
     if is_chatid(
         &field
             .iter()
             .map(|v| v.as_ref().to_owned())
-            .collect::<Vec<String>>(),
+            .collect::<Vec<String>>()
     ) {
         false
     } else {
@@ -508,13 +519,13 @@ where
 #[allow(dead_code)]
 pub(crate) fn type_mapper<T>(field: &T) -> &str
 where
-    T: AsRef<str>,
+    T: AsRef<str>
 {
     match field.as_ref() {
         "Integer" => "i64",
         "Boolean" => "bool",
         "Float" => "f64",
-        x => x,
+        x => x
     }
 }
 

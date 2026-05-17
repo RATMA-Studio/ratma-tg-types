@@ -1,17 +1,21 @@
-use crate::schema::{Field, Spec};
-use crate::{naming::*, schema::Method};
-use crate::{util::*, MultiTypes, INPUT_FILE};
-use anyhow::{anyhow, Result};
+use std::{rc::Rc, sync::Arc};
+
+use anyhow::{Result, anyhow};
 use once_cell::sync::OnceCell;
-use quote::{format_ident, quote, ToTokens, __private::TokenStream};
-use std::rc::Rc;
-use std::sync::Arc;
+use quote::{__private::TokenStream, ToTokens, format_ident, quote};
+
+use crate::{
+    INPUT_FILE, MultiTypes,
+    naming::*,
+    schema::{Field, Method, Spec},
+    util::*
+};
 
 /// Generator for telegram api methods. This hould be run after GenerateTypes
 pub(crate) struct GenerateMethods<'a> {
-    spec: Arc<Spec>,
-    multitypes: MultiTypes,
-    choose_type: OnceCell<ChooseType<'a>>,
+    spec:        Arc<Spec>,
+    multitypes:  MultiTypes,
+    choose_type: OnceCell<ChooseType<'a>>
 }
 
 impl<'a> GenerateMethods<'a> {
@@ -20,7 +24,7 @@ impl<'a> GenerateMethods<'a> {
         Self {
             spec,
             multitypes: multitypes.clone(),
-            choose_type: OnceCell::new(),
+            choose_type: OnceCell::new()
         }
     }
 
@@ -43,7 +47,7 @@ impl<'a> GenerateMethods<'a> {
     fn method_params(
         &self,
         method: &Method,
-        generic: bool,
+        generic: bool
     ) -> (Vec<TokenStream>, Vec<TokenStream>) {
         let typenames = method
             .fields
@@ -81,7 +85,7 @@ impl<'a> GenerateMethods<'a> {
     fn method_params_req(
         &self,
         method: &Method,
-        generic: bool,
+        generic: bool
     ) -> (Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>) {
         let mut g = 'A';
         let typenames = method
@@ -131,7 +135,7 @@ impl<'a> GenerateMethods<'a> {
         (
             typenames.collect(),
             types.into_iter().flatten().collect(),
-            generics,
+            generics
         )
     }
 
@@ -143,7 +147,7 @@ impl<'a> GenerateMethods<'a> {
             &"",
             false,
             true,
-            false,
+            false
         )?;
         let name = get_method_name(method);
         let name = format_ident!("{}", name);
@@ -170,7 +174,7 @@ impl<'a> GenerateMethods<'a> {
             .map(|f| {
                 (
                     format_ident!("{}", f).to_token_stream(),
-                    format_ident!("get_{}", f).to_token_stream(),
+                    format_ident!("get_{}", f).to_token_stream()
                 )
             });
         let types = method.fields.as_deref().unwrap_or_default().iter();
@@ -374,9 +378,10 @@ impl<'a> GenerateMethods<'a> {
             });
 
         let lifetime = !(method.fields.as_ref().map_or(0, |f| f.len()) == 0
-            || method.fields.as_ref().map_or(false, |f| {
-                f.iter().all(|f| no_lifetime(f) || is_chatid(&f.types))
-            }));
+            || method
+                .fields
+                .as_ref()
+                .is_some_and(|f| f.iter().all(|f| no_lifetime(f) || is_chatid(&f.types))));
 
         let g = method
             .fields
@@ -598,8 +603,9 @@ impl<'a> GenerateMethods<'a> {
         }
     }
 
-    /// Choose what post method to call based on whether we are uploading multipart/form-data
-    /// or if we have a method with no parameters (which breaks serde for some reason)
+    /// Choose what post method to call based on whether we are uploading
+    /// multipart/form-data or if we have a method with no parameters (which
+    /// breaks serde for some reason)
     fn generate_post(&self, method: &Method) -> TokenStream {
         let endpoint = &method.name;
         let inputfile = method
@@ -633,7 +639,7 @@ impl<'a> GenerateMethods<'a> {
             &"",
             false,
             true,
-            false,
+            false
         )?;
 
         let (typenames, types) = self.method_params(method, true);
@@ -750,9 +756,9 @@ impl<'a> GenerateMethods<'a> {
         }
     }
 
-    /// If we find multiple types in one field and we can't make a decision about it,
-    /// use the mapping from enum names to types generated from the 'types' phase
-    /// to decide what enum to use
+    /// If we find multiple types in one field and we can't make a decision
+    /// about it, use the mapping from enum names to types generated from
+    /// the 'types' phase to decide what enum to use
     fn get_multitype_by_vec(&self, types: &[String]) -> Result<String> {
         if is_inputfile_types(types) {
             Ok(INPUT_FILE.to_owned())
