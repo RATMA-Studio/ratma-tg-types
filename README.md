@@ -1,10 +1,14 @@
 # ratma-tg-types
 
-Auto-generated idiomatic Rust types for the [Telegram Bot API](https://core.telegram.org/bots/api) and WebApp.
+Auto-generated idiomatic Rust types for the entire Telegram surface — [Bot API](https://core.telegram.org/bots/api) and [WebApp / Mini Apps](https://core.telegram.org/bots/webapps).
 
-Fork of [fmeef/botapi-rs](https://github.com/fmeef/botapi-rs) by [RATMA Studio](https://github.com/RATMA-Studio). Goal: extract a standalone, idiomatic Rust types crate that the wider Telegram-bot ecosystem can adopt as a common foundation, auto-updated against the latest Bot API spec.
+Fork of [fmeef/botapi-rs](https://github.com/fmeef/botapi-rs) by [RATMA Studio](https://github.com/RATMA-Studio).
 
-See the [roadmap tracking issue](https://github.com/RATMA-Studio/ratma-tg-types/issues/1) for in-progress changes versus upstream.
+## Vision
+
+**Telegram itself is the only source of truth.** One Rust crate family. One codegen pipeline. Auto-synced on every release. Consumed by every RATMA Rust repo (`fork-teloxide`, `ratma-auth-rs`, TMA backends) — no more hand-written copies of Telegram types scattered across projects.
+
+External adoption (by `teloxide`, `frankenstein` and friends) is a bonus, not a goal — they have their own forks and we're not waiting for ecosystem convergence. See [ROADMAP.md](ROADMAP.md) for the full plan and [tracking issue #1](https://github.com/RATMA-Studio/ratma-tg-types/issues/1) for status.
 
 ---
 
