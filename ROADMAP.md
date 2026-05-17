@@ -39,25 +39,18 @@ The fork-teloxide shim is the single largest piece of work in Phase 5; the WebAp
 
 ---
 
-## Phase 0 — Fork hygiene *(in progress)*
+## Phase 0 — Fork hygiene *(done)*
 
 Goal: clean RATMA-branded baseline that builds green.
 
 - [x] Rename crate `botapi` → `ratma-tg-types`, generator `tggen` → `ratma-tg-types-codegen`, repoint URLs (#1, commit `3e8a47e`).
 - [x] Workspace split structure (#3, three crates land: `codegen`, `core`, `http`).
-- [ ] **chore: bump build/runtime deps to current stable**
-  - Audit `reqwest`, `tokio`, `serde`, `hyper`, `hyper-util`, `ordered-float`, `rand`, `serde_stacker`, `rmp-serde`. Re-pin to latest minor compatible with our MSRV.
-  - Run `cargo update`, `cargo audit`, `cargo deny check advisories`.
-  - Risk: `reqwest` major-version bumps may break `multipart::Part` usage. Hold a major bump until Phase 2 (we may drop the reqwest dep from `core` entirely).
+- [x] **chore: bump build/runtime deps to current stable** (#8). `cargo update` is a no-op on current pins; major-version bumps (`reqwest`, etc.) intentionally deferred until Phase 2 codegen overhaul, since `core` will likely drop `reqwest` entirely.
 - [x] **chore: edition 2024 / `rust-version = "1.95"`** (in workspace).
-- [ ] **chore: rustfmt + clippy gates in CI**
-  - `rustfmt.toml` already aligned with `fork-teloxide` conventions.
-  - `clippy.toml` exists; wire to CI with `-D warnings`.
-- [ ] **chore: license attribution**
-  - Keep upstream `LICENSE` (MIT) untouched.
-  - `NOTICE.md` credits `fmeef/botapi-rs` (Alex Ballmer) and `PaulSonOfLars/telegram-bot-api-spec`.
+- [x] **chore: rustfmt + clippy gates in CI** (#8). Full matrix: `fmt` on nightly (rustfmt.toml uses unstable features), `clippy --workspace --all-targets` on stable with `-Dwarnings`, `test` matrix on stable + MSRV 1.95.0, `doc` with `-Dwarnings`, `audit`, aggregate `ci-pass` gate via `re-actors/alls-green`.
+- [x] **chore: license attribution** — upstream `LICENSE` (MIT) preserved; `NOTICE.md` credits `fmeef/botapi-rs` (Alex Ballmer) and `PaulSonOfLars/telegram-bot-api-spec`.
 
-Deliverable: green `cargo check && cargo test && RUSTFLAGS="-Dwarnings" cargo clippy --all-targets` against latest stable, no behavioral change.
+Deliverable: green `cargo check && cargo test && RUSTFLAGS="-Dwarnings" cargo clippy --all-targets` against latest stable, no behavioral change. ✓
 
 ---
 
@@ -277,7 +270,7 @@ Deliverable: `cargo add ratma-tg-types{,-core,-http,-webapp}` works, current Bot
 
 | Phase | Status | Issue |
 |---|---|---|
-| 0 — Fork hygiene | in progress | #1 tracking |
+| 0 — Fork hygiene | **done** | #7 (closed via #8) |
 | 1 — Workspace cleanup | structurally done; deps cleanup pending | #3 (closed for structural part), pending follow-ups |
 | 2 — Idiomatic codegen | not started | tbd |
 | 2½ — WebApp ingestion | not started | tbd |
