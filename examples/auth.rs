@@ -1,5 +1,5 @@
 use anyhow::Result;
-use botapi::bot::BotBuilder;
+use ratma_tg_types::bot::BotBuilder;
 #[tokio::main]
 async fn main() -> Result<()> {
     let token = std::env::var("TOKEN")?;

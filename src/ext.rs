@@ -1,30 +1,35 @@
-use hyper_util::rt::TokioIo;
-use rand::rngs::OsRng;
-use rand::TryRngCore;
-use std::net::SocketAddr;
-use std::{net::IpAddr, pin::Pin};
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
-use tokio::sync::mpsc::error::SendError;
-use uuid::Uuid;
+use std::{
+    net::{IpAddr, SocketAddr},
+    pin::Pin
+};
 
-use crate::bot::ApiError;
-use crate::gen_types::UpdateExt;
-use crate::{bot::Bot, gen_types::Update};
-use anyhow::anyhow;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use async_stream::stream;
 use futures_core::Stream;
 use http_body_util::{BodyExt, Limited};
-use hyper::body::{Buf, Incoming};
-use hyper::service::service_fn;
-use hyper::{Request, Response, StatusCode};
+use hyper::{
+    Request, Response, StatusCode,
+    body::{Buf, Incoming},
+    service::service_fn
+};
+use hyper_util::rt::TokioIo;
+use rand::{TryRng, rngs::SysRng};
+use tokio::{
+    net::TcpListener,
+    sync::{mpsc, mpsc::error::SendError}
+};
+use uuid::Uuid;
+
+use crate::{
+    bot::{ApiError, Bot},
+    gen_types::{Update, UpdateExt}
+};
 
 /// Helper for fetching updates via long polling.
 pub struct LongPoller {
-    bot: Bot,
-    offset: i64,
-    allowed_updates: Option<Vec<String>>,
+    bot:             Bot,
+    offset:          i64,
+    allowed_updates: Option<Vec<String>>
 }
 
 impl LongPoller {
@@ -32,13 +37,13 @@ impl LongPoller {
         Self {
             bot: bot.clone(),
             offset: 0,
-            allowed_updates,
+            allowed_updates
         }
     }
 
     /// Return an async stream of updates, terminating with error
     pub async fn get_updates(
-        mut self,
+        mut self
     ) -> Pin<Box<impl Stream<Item = Result<UpdateExt, ApiError>>>> {
         let s = stream! {
             loop {
@@ -71,7 +76,7 @@ pub struct TokioExecutor;
 impl<F> hyper::rt::Executor<F> for TokioExecutor
 where
     F: std::future::Future + Send + 'static,
-    F::Output: Send + 'static,
+    F::Output: Send + 'static
 {
     fn execute(&self, fut: F) {
         tokio::task::spawn(fut);
@@ -81,18 +86,18 @@ where
 /// Endpoint for webhooks, could be either a raw ip address or a hostname
 pub enum BotUrl {
     Address(String, IpAddr),
-    Host(String),
+    Host(String)
 }
 
-/// Helper for fetching updates via webhook. This currently requires a reverse proxy as
-/// tls is not supported.
+/// Helper for fetching updates via webhook. This currently requires a reverse
+/// proxy as tls is not supported.
 pub struct Webhook {
-    bot: Bot,
-    url: BotUrl,
+    bot:                  Bot,
+    url:                  BotUrl,
     drop_pending_updates: bool,
-    addr: SocketAddr,
-    cookie: Uuid,
-    allowed_updates: Option<Vec<String>>,
+    addr:                 SocketAddr,
+    cookie:               Uuid,
+    allowed_updates:      Option<Vec<String>>
 }
 
 impl Webhook {
@@ -101,10 +106,10 @@ impl Webhook {
         url: BotUrl,
         drop_pending_updates: bool,
         addr: SocketAddr,
-        allowed_updates: Option<Vec<String>>,
+        allowed_updates: Option<Vec<String>>
     ) -> Self {
         let mut bytes: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        OsRng.try_fill_bytes(&mut bytes).unwrap();
+        SysRng.try_fill_bytes(&mut bytes).unwrap();
         let cookie = Uuid::from_slice(bytes.as_slice()).expect("invalid uuid");
         Self {
             bot: bot.clone(),
@@ -112,7 +117,7 @@ impl Webhook {
             drop_pending_updates,
             addr,
             cookie,
-            allowed_updates,
+            allowed_updates
         }
     }
 
@@ -127,7 +132,7 @@ impl Webhook {
                         None,
                         self.allowed_updates.as_ref(),
                         Some(self.drop_pending_updates),
-                        Some(self.cookie.to_string().as_str()),
+                        Some(self.cookie.to_string().as_str())
                     )
                     .await
             }
@@ -140,7 +145,7 @@ impl Webhook {
                         None,
                         self.allowed_updates.as_ref(),
                         Some(self.drop_pending_updates),
-                        Some(self.cookie.to_string().as_str()),
+                        Some(self.cookie.to_string().as_str())
                     )
                     .await
             }
@@ -153,10 +158,10 @@ impl Webhook {
             .await
     }
 
-    /// Return an async stream of updates, terminating with error. Webhooks are enabled on
-    /// startup and disabled on error.
+    /// Return an async stream of updates, terminating with error. Webhooks are
+    /// enabled on startup and disabled on error.
     pub async fn get_updates(
-        self,
+        self
     ) -> Result<Pin<Box<impl Stream<Item = Result<UpdateExt, ApiError>>>>, ApiError> {
         let (tx, mut rx) = mpsc::channel(128);
         let cookie = self.cookie;
@@ -166,22 +171,22 @@ impl Webhook {
         let svc = service_fn(move |body: Request<Incoming>| {
             let tx = tx.clone();
             async move {
-                if let Some(token) = body.headers().get("X-Telegram-Bot-Api-Secret-Token") {
-                    if token.to_str().unwrap_or("") == cookie.to_string().as_str() {
-                        let body = Limited::new(body, 1024 * 1024 * 10);
-                        let body = body.collect().await.map_err(|e| anyhow!(e))?.aggregate();
-                        if let Ok(update) = serde_json::from_reader::<_, Update>(body.reader()) {
-                            tx.send(update.into())
-                                .await
-                                .map_err(|e: SendError<UpdateExt>| anyhow!(e))?;
-                        }
+                if let Some(token) = body.headers().get("X-Telegram-Bot-Api-Secret-Token")
+                    && token.to_str().unwrap_or("") == cookie.to_string().as_str()
+                {
+                    let body = Limited::new(body, 1024 * 1024 * 10);
+                    let body = body.collect().await.map_err(|e| anyhow!(e))?.aggregate();
+                    if let Ok(update) = serde_json::from_reader::<_, Update>(body.reader()) {
+                        tx.send(update.into())
+                            .await
+                            .map_err(|e: SendError<UpdateExt>| anyhow!(e))?;
                     }
                 }
                 Ok::<_, ApiError>(
                     Response::builder()
                         .status(StatusCode::OK)
                         .body("".to_owned())
-                        .map_err(|e| anyhow!(e))?,
+                        .map_err(|e| anyhow!(e))?
                 )
             }
         });
@@ -214,9 +219,8 @@ impl Webhook {
             }
 
             self.teardown().await?;
-            if let Err(err) = fut.await {
-                yield Err(anyhow!(err).into());
-            }
+            let Err(err) = fut.await;
+            yield Err(anyhow!(err).into());
         };
 
         Ok(Box::pin(s))
