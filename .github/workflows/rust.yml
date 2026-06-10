@@ -32,6 +32,7 @@ jobs:
     needs:
       - fmt
       - clippy
+      - features
       - test
       - doc
       - audit
@@ -55,8 +56,37 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    name: clippy (stable)
+    name: clippy (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, "1.95.0"]
+    env:
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets
+
+  # Feature combinations of the façade crate. Examples and doc-tests require
+  # the default `http` feature, so only the library target is linted here.
+  features:
+    name: features (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - "--no-default-features"
+          - "--no-default-features --features http"
+          - "--no-default-features --features rhai"
     env:
       RUSTFLAGS: "-Dwarnings"
     steps:
@@ -67,7 +97,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets
+      - run: cargo clippy -p ratma-tg-types ${{ matrix.features }}
 
   test:
     name: test (${{ matrix.toolchain }})
