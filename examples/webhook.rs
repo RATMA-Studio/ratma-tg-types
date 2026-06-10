@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use futures_util::stream::StreamExt;
 use ratma_tg_types::{
     bot::BotBuilder,
@@ -17,8 +17,11 @@ async fn main() -> Result<()> {
     let poller = Webhook::new(&bot, url, false, addr, None);
     let mut res = poller.get_updates().await?;
 
-    while let Some(Ok(update)) = res.next().await {
-        println!("update {:?}", update);
+    while let Some(update) = res.next().await {
+        match update {
+            Ok(update) => println!("update {:?}", update),
+            Err(err) => return Err(anyhow!("updates stream failed: {}", err))
+        }
     }
     Ok(())
 }

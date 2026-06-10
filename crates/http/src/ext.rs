@@ -1,6 +1,7 @@
 use std::{
     net::{IpAddr, SocketAddr},
-    pin::Pin
+    pin::Pin,
+    task::{Context, Poll}
 };
 
 use anyhow::{Result, anyhow};
@@ -16,7 +17,8 @@ use hyper_util::rt::TokioIo;
 use rand::{TryRng, rngs::SysRng};
 use tokio::{
     net::TcpListener,
-    sync::{mpsc, mpsc::error::SendError}
+    sync::{mpsc, mpsc::error::SendError},
+    task::{AbortHandle, JoinHandle}
 };
 use uuid::Uuid;
 
@@ -69,17 +71,37 @@ impl LongPoller {
     }
 }
 
-#[derive(Clone)]
-/// An Executor that uses the tokio runtime.
-pub struct TokioExecutor;
+/// Stream of updates returned by [`Webhook::get_updates`].
+///
+/// The webhook listener runs as a background tokio task whose failure is
+/// never silent: if the task panics or stops, the stream removes the webhook
+/// and terminates with an `Err` item describing the task outcome. Dropping
+/// the stream aborts the listener task; [`WebhookStream::abort`] does the
+/// same explicitly.
+pub struct WebhookStream {
+    stream: Pin<Box<dyn Stream<Item = Result<UpdateExt, ApiError>> + Send>>,
+    abort:  AbortHandle
+}
 
-impl<F> hyper::rt::Executor<F> for TokioExecutor
-where
-    F: std::future::Future + Send + 'static,
-    F::Output: Send + 'static
-{
-    fn execute(&self, fut: F) {
-        tokio::task::spawn(fut);
+impl WebhookStream {
+    /// Stops the background listener task. The stream then removes the
+    /// webhook and terminates with an `Err` item reporting the cancellation.
+    pub fn abort(&self) {
+        self.abort.abort();
+    }
+}
+
+impl Stream for WebhookStream {
+    type Item = Result<UpdateExt, ApiError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.get_mut().stream.as_mut().poll_next(cx)
+    }
+}
+
+impl Drop for WebhookStream {
+    fn drop(&mut self) {
+        self.abort.abort();
     }
 }
 
@@ -158,16 +180,14 @@ impl Webhook {
             .await
     }
 
-    /// Return an async stream of updates, terminating with error. Webhooks are
-    /// enabled on startup and disabled on error.
-    pub async fn get_updates(
-        self
-    ) -> Result<Pin<Box<impl Stream<Item = Result<UpdateExt, ApiError>>>>, ApiError> {
-        let (tx, mut rx) = mpsc::channel(128);
+    /// Spawns the task listening for incoming webhook connections and
+    /// forwarding decoded updates into `tx`.
+    fn spawn_listener(
+        &self,
+        listener: TcpListener,
+        tx: mpsc::Sender<UpdateExt>
+    ) -> JoinHandle<()> {
         let cookie = self.cookie;
-
-        let listener = TcpListener::bind(self.addr).await.map_err(|e| anyhow!(e))?;
-
         let svc = service_fn(move |body: Request<Incoming>| {
             let tx = tx.clone();
             async move {
@@ -190,39 +210,155 @@ impl Webhook {
                 )
             }
         });
-        let fut = tokio::spawn(async move {
+        tokio::spawn(async move {
             loop {
                 let svc = svc.clone();
-                if let Ok((stream, _)) = listener.accept().await {
-                    let io = TokioIo::new(stream);
+                match listener.accept().await {
+                    Ok((stream, _)) => {
+                        let io = TokioIo::new(stream);
 
-                    tokio::task::spawn(async move {
-                        if let Err(err) = hyper::server::conn::http1::Builder::new()
-                            .serve_connection(io, svc)
-                            .await
-                        {
-                            log::warn!("connection error {}", err);
-                        }
-                    });
+                        tokio::task::spawn(async move {
+                            if let Err(err) = hyper::server::conn::http1::Builder::new()
+                                .serve_connection(io, svc)
+                                .await
+                            {
+                                log::warn!("connection error {}", err);
+                            }
+                        });
+                    }
+                    Err(err) => log::warn!("failed to accept webhook connection {}", err)
                 }
             }
-        });
+        })
+    }
+
+    /// Wraps the update channel and the listener task into the public stream.
+    ///
+    /// The stream yields updates until the listener task completes (which a
+    /// task running an infinite accept loop only does by panicking or being
+    /// aborted), then removes the webhook and terminates with an `Err` item
+    /// describing the task outcome.
+    fn into_stream(
+        self,
+        mut rx: mpsc::Receiver<UpdateExt>,
+        mut handle: JoinHandle<()>
+    ) -> WebhookStream {
+        let abort = handle.abort_handle();
+        let s = stream! {
+            let join_result = loop {
+                tokio::select! {
+                    biased;
+                    result = &mut handle => break result,
+                    update = rx.recv() => {
+                        if let Some(update) = update {
+                            yield Ok(update);
+                        }
+                    }
+                }
+            };
+
+            if let Err(err) = self.teardown().await {
+                log::warn!("failed to remove webhook during shutdown {}", err);
+            }
+
+            match join_result {
+                Ok(()) => yield Err(anyhow!("webhook listener task stopped unexpectedly").into()),
+                Err(err) => yield Err(anyhow!("webhook listener task failed: {}", err).into())
+            }
+        };
+
+        WebhookStream {
+            stream: Box::pin(s),
+            abort
+        }
+    }
+
+    /// Enable the webhook and return an async stream of updates.
+    ///
+    /// The returned [`WebhookStream`] owns the background listener task: a
+    /// panic or unexpected exit of that task surfaces as the terminal `Err`
+    /// item of the stream instead of silently stopping updates, and dropping
+    /// the stream aborts the task.
+    pub async fn get_updates(self) -> Result<WebhookStream, ApiError> {
+        let (tx, rx) = mpsc::channel(128);
+
+        let listener = TcpListener::bind(self.addr).await.map_err(|e| anyhow!(e))?;
+        let handle = self.spawn_listener(listener, tx);
 
         if let Err(err) = self.setup().await {
+            handle.abort();
             self.teardown().await?;
             return Err(err);
         }
 
-        let s = stream! {
-            while let Some(update) = rx.recv().await {
-                yield Ok(update);
-            }
+        Ok(self.into_stream(rx, handle))
+    }
+}
 
-            self.teardown().await?;
-            let Err(err) = fut.await;
-            yield Err(anyhow!(err).into());
-        };
+#[cfg(test)]
+mod tests {
+    use futures_util::StreamExt;
 
-        Ok(Box::pin(s))
+    use super::*;
+    use crate::bot::BotBuilder;
+
+    // Bot pointing at a closed local port: any API call fails fast without
+    // touching the network beyond loopback.
+    fn webhook() -> Webhook {
+        let bot = BotBuilder::new("token")
+            .expect("client builder failed")
+            .api("https://127.0.0.1:1")
+            .build();
+        Webhook::new(
+            &bot,
+            BotUrl::Host("https://example.com".to_owned()),
+            false,
+            ([127, 0, 0, 1], 0).into(),
+            None
+        )
+    }
+
+    #[tokio::test]
+    async fn listener_panic_terminates_stream_with_error() {
+        let (_tx, rx) = mpsc::channel(1);
+        let handle = tokio::spawn(async { panic!("listener crashed") });
+        let mut stream = webhook().into_stream(rx, handle);
+
+        let item = stream
+            .next()
+            .await
+            .expect("stream must yield a terminal item");
+        let err = item.expect_err("listener panic must surface as an error");
+        assert!(
+            err.to_string().contains("webhook listener task failed"),
+            "unexpected error: {err}"
+        );
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn abort_terminates_stream_with_error() {
+        let (_tx, rx) = mpsc::channel(1);
+        let handle = tokio::spawn(std::future::pending::<()>());
+        let mut stream = webhook().into_stream(rx, handle);
+        stream.abort();
+
+        let item = stream
+            .next()
+            .await
+            .expect("stream must yield a terminal item");
+        assert!(item.is_err(), "abort must surface as an error");
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn updates_are_forwarded_before_termination() {
+        let (tx, rx) = mpsc::channel(1);
+        let handle = tokio::spawn(std::future::pending::<()>());
+        let mut stream = webhook().into_stream(rx, handle);
+
+        tx.send(UpdateExt::Invalid).await.expect("send failed");
+        let item = stream.next().await.expect("stream must yield the update");
+        assert!(matches!(item, Ok(UpdateExt::Invalid)));
     }
 }
