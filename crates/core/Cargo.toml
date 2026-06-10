@@ -9,6 +9,8 @@ homepage = "https://github.com/RATMA-Studio/ratma-tg-types"
 repository = "https://github.com/RATMA-Studio/ratma-tg-types.git"
 license = "MIT"
 
+include = ["src/**/*", "build.rs", "api.json", "Cargo.toml"]
+
 [dependencies]
 anyhow = "1.0.102"
 ordered-float = { version = "5.3.0", features = ["serde"] }
