@@ -1,12 +1,11 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
-    sync::Arc
+    sync::{Arc, LazyLock}
 };
 
 use anyhow::{Ok, Result, anyhow};
 use convert_case::{Case, Casing};
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use quote::{__private::TokenStream, ToTokens, format_ident, quote};
 use regex::Regex;
 
@@ -17,9 +16,11 @@ use crate::{
     util::*
 };
 
-lazy_static! {
-    static ref REGEX_STATUS: Regex = Regex::new(r#""[a-z]+""#).unwrap();
-}
+/// Matches quoted lowercase status literals (e.g. `"creator"`) in spec field
+/// descriptions.
+static REGEX_STATUS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#""[a-z]+""#).expect("invariant: REGEX_STATUS pattern is a valid constant regex")
+});
 
 /// Generator for the "types" source file
 pub(crate) struct GenerateTypes<'a> {
